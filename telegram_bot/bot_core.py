@@ -318,6 +318,40 @@ async def cb_topup(c: CallbackQuery):
     else:
         await c.answer("Ошибка пополнения", show_alert=True)
 
+
+@router.message(F.text == "🎁 Премиум бесплатно")
+async def premium_free(m: Message):
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(f"{API_BASE}/referrals/summary/{m.chat.id}")
+        data = r.json()
+        invited = data.get("invited", 0)
+        subscribed = data.get("subscribed", 0)
+        ref_link = data.get("ref_link") or f"https://t.me/{getattr(settings, 'BOT_NAME', 'ai_superbot')}?start={m.chat.id}"
+    except Exception:
+        invited = 0
+        subscribed = 0
+        ref_link = f"https://t.me/{getattr(settings, 'BOT_NAME', 'ai_superbot')}?start={m.chat.id}"
+
+    text = (
+        "🎁 <b>Премиум бесплатно — реферальная программа</b>\n\n"
+        "<b>Как это работает:</b>\n"
+        "1️⃣ Поделись своей уникальной ссылкой с друзьями.\n"
+        "2️⃣ За каждого друга (до 20), который просто начнёт пользоваться ботом —\n"
+        "   ты получаешь +1 день доступа уровня <b>Light</b> (в реальном боте).\n"
+        "3️⃣ Если друг оформит любую платную подписку по твоей ссылке —\n"
+        "   вы оба получите:\n"
+        "   • <b>1 месяц</b> подписки уровня <b>Max</b> (симуляция)\n"
+        "   • <b>3</b> бонусных генерации видео (симуляция)\n\n"
+        "<b>Статистика:</b>\n"
+        f"👥 Приглашено друзей: <b>{invited}</b>\n"
+        f"✅ Оформили подписку: <b>{subscribed}</b>\n\n"
+        "<b>Твоя ссылка:</b>\n"
+        f"{ref_link}"
+    )
+    await m.answer(text, reply_markup=bottom_menu_kb())
+
+    
 # -------------------- Chats --------------------
 @router.message(F.text == "💬 Мои чаты")
 async def chats_btn(m: Message):
@@ -436,39 +470,6 @@ async def cb_clear_chats(c: CallbackQuery):
         await c.message.answer("💬 <b>Твои чаты</b>", reply_markup=kb)
 
     await c.answer("Все чаты удалены")
-
-@router.message(Command("image"))
-@router.message(F.text == "🎁 Премиум бесплатно")
-async def premium_free(m: Message):
-    try:
-        async with httpx.AsyncClient() as client:
-            r = await client.get(f"{API_BASE}/referrals/summary/{m.chat.id}")
-        data = r.json()
-        invited = data.get("invited", 0)
-        subscribed = data.get("subscribed", 0)
-        ref_link = data.get("ref_link") or f"https://t.me/{getattr(settings, 'BOT_NAME', 'ai_superbot')}?start={m.chat.id}"
-    except Exception:
-        invited = 0
-        subscribed = 0
-        ref_link = f"https://t.me/{getattr(settings, 'BOT_NAME', 'ai_superbot')}?start={m.chat.id}"
-
-    text = (
-        "🎁 <b>Премиум бесплатно — реферальная программа</b>\n\n"
-        "<b>Как это работает:</b>\n"
-        "1️⃣ Поделись своей уникальной ссылкой с друзьями.\n"
-        "2️⃣ За каждого друга (до 20), который просто начнёт пользоваться ботом —\n"
-        "   ты получаешь +1 день доступа уровня <b>Light</b> (в реальном боте).\n"
-        "3️⃣ Если друг оформит любую платную подписку по твоей ссылке —\n"
-        "   вы оба получите:\n"
-        "   • <b>1 месяц</b> подписки уровня <b>Max</b> (симуляция)\n"
-        "   • <b>3</b> бонусных генерации видео (симуляция)\n\n"
-        "<b>Статистика:</b>\n"
-        f"👥 Приглашено друзей: <b>{invited}</b>\n"
-        f"✅ Оформили подписку: <b>{subscribed}</b>\n\n"
-        "<b>Твоя ссылка:</b>\n"
-        f"{ref_link}"
-    )
-    await m.answer(text, reply_markup=bottom_menu_kb())
 
 # -------------------- Image (stub) --------------------
 @router.message(Command("image"))
