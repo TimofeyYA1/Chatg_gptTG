@@ -12,7 +12,10 @@ from aiogram.types import (
     CallbackQuery, ReplyKeyboardMarkup, KeyboardButton,
 )
 import httpx
-
+from aiogram.types import FSInputFile
+import os
+from io import BytesIO
+import base64
 from common.config import settings
 
 # -------------------- Bot & DP --------------------
@@ -481,9 +484,63 @@ async def cmd_image(m: Message, state: FSMContext):
 @router.message(ImgFlow.waiting_prompt)
 async def receive_image_prompt(m: Message, state: FSMContext):
     prompt = (m.text or "").strip()
-    async with httpx.AsyncClient as client:
-        await client.post(f"{API_BASE}/usage/increment", json={"chat_id": m.chat.id, "kind": "images", "value": 1})
-    await m.answer(f"🧪 Изображение сгенерировано (симуляция).\nPrompt: <i>{prompt}</i>")
+    if not prompt:
+        await m.answer("Опишите изображение текстом.")
+        return
+
+    img_bytes: BytesIO | None = None
+    api_status = None
+
+    try:
+        async with httpx.AsyncClient() as client:
+            # пробуем увеличить usage (не критично при сбое)
+            try:
+                await client.post(
+                    f"{API_BASE}/usage/increment",
+                    json={"chat_id": m.chat.id, "kind": "images", "value": 1},
+                    timeout=10,
+                )
+            except Exception:
+                pass
+
+            # вызываем API генерации
+            r = await client.post(
+                f"{API_BASE}/image/generate",
+                json={"chat_id": m.chat.id, "prompt": prompt, "size": "512x512"},
+                timeout=60,
+            )
+            api_status = r.status_code
+
+        if api_status == 200:
+            data = r.json()
+            if "b64" in data and data["b64"]:
+                raw = base64.b64decode(data["b64"])
+                img_bytes = BytesIO(raw)
+            elif "url" in data and data["url"]:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(data["url"], timeout=60)
+                if resp.status_code == 200:
+                    img_bytes = BytesIO(resp.content)
+    except Exception:
+        img_bytes = None
+
+    # путь к твоей заглушке
+    fallback_path = os.path.join(os.path.dirname(__file__), "topper.jpg")
+
+    if img_bytes is None:
+        # если генерация не удалась — отправляем topper.jpg
+        photo = FSInputFile(fallback_path)
+        caption = (
+            "🧪 (не удалось подключиться к сервису изображений) "
+            "Возвращаю заглушку.\n"
+            f"Prompt: <i>{prompt}</i>"
+        )
+        await m.answer_photo(photo=photo, caption=caption)
+    else:
+        # если всё получилось — отправляем сгенерированное изображение
+        img_bytes.seek(0)
+        await m.answer_photo(photo=img_bytes, caption=f"🧪 Изображение сгенерировано.\nPrompt: <i>{prompt}</i>")
+
     await state.clear()
 
 # -------------------- Text -> API --------------------
