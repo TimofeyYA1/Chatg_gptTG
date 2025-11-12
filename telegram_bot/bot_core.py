@@ -131,8 +131,27 @@ def chat_create_prompt_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="❌ Отмена",     callback_data="chat:new:cancel")],
     ])
 
+
+# -------------------- helpers --------------------
+async def _refresh_chats_markup(chat_id: int, list_msg_id: int):
+    """Перерисовать клавиатуру у СТАРОГО сообщения со списком чатов."""
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{API_BASE}/chats/{chat_id}")
+    items = r.json().get("items", [])
+    await bot.edit_message_reply_markup(
+        chat_id=chat_id,
+        message_id=list_msg_id,
+        reply_markup=chats_inline_kb(items),
+    )
+
+async def _safe_delete(chat_id: int, message_id: int):
+    try:
+        await bot.delete_message(chat_id, message_id)
+    except Exception:
+        pass
+
+
 # -------------------- helpers: build subscription view --------------------
-# ----- ЗАМЕНА ФУНКЦИИ -----
 async def build_subscription_view(chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
     async with httpx.AsyncClient() as client:
         r = await client.get(f"{API_BASE}/subscriptions/summary/{chat_id}")
@@ -156,9 +175,7 @@ async def build_subscription_view(chat_id: int) -> tuple[str, InlineKeyboardMark
         "video":    (limits.get("video", 0)    + addons.get("video", 0)),
     }
 
-    # Красивые строки состояния
     if active_until:
-        # срезаем микросекунды, заменим 'T' на пробел
         au_human = active_until.replace("T", " ").split(".")[0]
         renew_str = "Вкл" if auto_renew else "Выкл"
         header = (
@@ -189,6 +206,7 @@ async def build_subscription_view(chat_id: int) -> tuple[str, InlineKeyboardMark
     )
 
     return text, sub_card_kb()
+
 # -------------------- /start --------------------
 @router.message(Command("start"))
 async def cmd_start(m: Message):
@@ -411,44 +429,68 @@ async def chats_btn(m: Message):
     kb = chats_inline_kb(r.json()["items"])
     await m.answer("💬 <b>Твои чаты</b>", reply_markup=kb)
 
-# Создание нового чата (с именем)
+# Создание нового чата — показываем запрос имени, помним id списка
 @router.callback_query(F.data == "chats:create")
 async def cb_create_chat_start(c: CallbackQuery, state: FSMContext):
     await state.set_state(ChatCreateFlow.waiting_title)
-    await c.message.answer(
+    await state.update_data(list_msg_id=c.message.message_id)  # помним СТАРОЕ сообщение со списком
+    msg = await c.message.answer(
         "🆕 Введите название нового чата (до 100 символов).\n"
         "Можно нажать «➡️ Пропустить», чтобы использовать имя по умолчанию.",
         reply_markup=chat_create_prompt_kb(),
     )
+    await state.update_data(prompt_msg_id=msg.message_id)
     await c.answer()
 
 @router.callback_query(F.data == "chat:new:cancel")
 async def cb_create_chat_cancel(c: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    prompt_msg_id = data.get("prompt_msg_id")
+    if prompt_msg_id:
+        await _safe_delete(c.message.chat.id, prompt_msg_id)
     await state.clear()
-    async with httpx.AsyncClient() as client:
-        r = await client.get(f"{API_BASE}/chats/{c.message.chat.id}")
-    await c.message.answer("Отмена. Список чатов:", reply_markup=chats_inline_kb(r.json()["items"]))
     await c.answer("Отменено")
 
 @router.callback_query(F.data == "chat:new:skip")
 async def cb_create_chat_skip(c: CallbackQuery, state: FSMContext):
-    await state.clear()
+    data = await state.get_data()
+    list_msg_id = data.get("list_msg_id")
+    prompt_msg_id = data.get("prompt_msg_id")
+
     async with httpx.AsyncClient() as client:
-        await client.post(f"{API_BASE}/chats/{c.message.chat.id}/create", json={"title": None})
-        r = await client.get(f"{API_BASE}/chats/{c.message.chat.id}")
-    await c.message.answer("Чат создан ✅", reply_markup=chats_inline_kb(r.json()["items"]))
-    await c.answer("Готово")
+        await client.post(f"{API_BASE}/chats/{c.message.chat.id}/create")  # без названия
+    if list_msg_id:
+        await _refresh_chats_markup(c.message.chat.id, list_msg_id)
+    if prompt_msg_id:
+        await _safe_delete(c.message.chat.id, prompt_msg_id)
+
+    await state.clear()
+    await c.answer("Чат создан")
 
 @router.message(ChatCreateFlow.waiting_title)
 async def receive_new_chat_title(m: Message, state: FSMContext):
+    data = await state.get_data()
+    list_msg_id = data.get("list_msg_id")
+    prompt_msg_id = data.get("prompt_msg_id")
+
     title = (m.text or "").strip()
     if len(title) > 100:
-        await m.answer("Название слишком длинное. До 100 символов, либо «➡️ Пропустить».", reply_markup=chat_create_prompt_kb())
+        await m.answer(
+            "Название слишком длинное. До 100 символов, либо «➡️ Пропустить».",
+            reply_markup=chat_create_prompt_kb(),
+        )
         return
+
     async with httpx.AsyncClient() as client:
         await client.post(f"{API_BASE}/chats/{m.chat.id}/create", json={"title": title or None})
-        r = await client.get(f"{API_BASE}/chats/{m.chat.id}")
-    await m.answer(f"Чат «<b>{title or 'Чат'}</b>» создан ✅", reply_markup=chats_inline_kb(r.json()["items"]))
+
+    if list_msg_id:
+        await _refresh_chats_markup(m.chat.id, list_msg_id)
+    if prompt_msg_id:
+        await _safe_delete(m.chat.id, prompt_msg_id)
+    # удалим сообщение с введённым именем
+    await _safe_delete(m.chat.id, m.message_id)
+
     await state.clear()
 
 # Активация
@@ -457,7 +499,6 @@ async def cb_activate_chat(c: CallbackQuery):
     sid = int(c.data.split(":")[2])
     async with httpx.AsyncClient() as client:
         r = await client.post(f"{API_BASE}/chats/{c.message.chat.id}/{sid}/activate")
-        # если 500 — r.json() упадёт; отдаём понятное сообщение
         if r.status_code != 200:
             await c.answer("Не удалось активировать чат (API 500).", show_alert=True)
             return
@@ -465,8 +506,8 @@ async def cb_activate_chat(c: CallbackQuery):
         r2 = await client.get(f"{API_BASE}/chats/{c.message.chat.id}")
     try:
         await c.message.edit_reply_markup(
-    reply_markup=chats_inline_kb(r2.json()["items"])
-)
+            reply_markup=chats_inline_kb(r2.json()["items"])
+        )
     except Exception:
         await c.message.answer("Список чатов обновлён.", reply_markup=chats_inline_kb(r2.json()["items"]))
     last = payload.get("last_message")
@@ -475,18 +516,15 @@ async def cb_activate_chat(c: CallbackQuery):
     await c.message.answer(preview)
     await c.answer("Сделан активным")
 
-# Удаление конкретного чата (НОВОЕ)
+# Удаление конкретного чата
 @router.callback_query(F.data.startswith("chats:delete:"))
 async def cb_delete_chat(c: CallbackQuery):
     sid = int(c.data.split(":")[2])
-
-    # удаляем чат и просто обновляем список, без доп. сообщений
     async with httpx.AsyncClient(timeout=8.0) as client:
         await client.post(f"{API_BASE}/chats/{c.message.chat.id}/{sid}/delete")
         r2 = await client.get(f"{API_BASE}/chats/{c.message.chat.id}")
-
     await c.message.edit_reply_markup(reply_markup=chats_inline_kb(r2.json()["items"]))
-    await c.answer("Чат удалён")  # короткий toast, НИЧЕГО в чат не отправляем
+    await c.answer("Чат удалён")
 
 @router.callback_query(F.data.startswith("chats:clear"))
 async def cb_clear_chats(c: CallbackQuery):
@@ -496,7 +534,6 @@ async def cb_clear_chats(c: CallbackQuery):
         ok = r.status_code == 200
         data = r.json() if ok else {}
         items = (data.get("items") or [])
-        # если по какой-то причине items не пришёл, добираем свежий список
         if not items:
             r2 = await client.get(f"{API_BASE}/chats/{chat_id}")
             if r2.status_code == 200:
@@ -504,7 +541,6 @@ async def cb_clear_chats(c: CallbackQuery):
 
     kb = chats_inline_kb(items) if items else chats_inline_kb([])
 
-    # безопасно обновляем клавиатуру: если нельзя редактировать — шлём новое сообщение
     try:
         await c.message.edit_reply_markup(reply_markup=kb)
     except Exception:
@@ -531,7 +567,6 @@ async def receive_image_prompt(m: Message, state: FSMContext):
 
     try:
         async with httpx.AsyncClient() as client:
-            # пробуем увеличить usage (не критично при сбое)
             try:
                 await client.post(
                     f"{API_BASE}/usage/increment",
@@ -541,7 +576,6 @@ async def receive_image_prompt(m: Message, state: FSMContext):
             except Exception:
                 pass
 
-            # вызываем API генерации
             r = await client.post(
                 f"{API_BASE}/image/generate",
                 json={"chat_id": m.chat.id, "prompt": prompt, "size": "512x512"},
@@ -562,11 +596,9 @@ async def receive_image_prompt(m: Message, state: FSMContext):
     except Exception:
         img_bytes = None
 
-    # путь к твоей заглушке
     fallback_path = os.path.join(os.path.dirname(__file__), "topper.jpg")
 
     if img_bytes is None:
-        # если генерация не удалась — отправляем topper.jpg
         photo = FSInputFile(fallback_path)
         caption = (
             "🧪 (не удалось подключиться к сервису изображений) "
@@ -575,7 +607,6 @@ async def receive_image_prompt(m: Message, state: FSMContext):
         )
         await m.answer_photo(photo=photo, caption=caption)
     else:
-        # если всё получилось — отправляем сгенерированное изображение
         img_bytes.seek(0)
         await m.answer_photo(photo=img_bytes, caption=f"🧪 Изображение сгенерировано.\nPrompt: <i>{prompt}</i>")
 
