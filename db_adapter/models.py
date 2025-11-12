@@ -8,7 +8,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
-
+from sqlalchemy import Integer, String, DateTime, ForeignKey, Text, Boolean, BigInteger
+from sqlalchemy.sql import func
 from db_adapter.database import Base
 
 
@@ -132,30 +133,24 @@ class File(Base):
 
 
 class Subscription(Base):
-    """
-    Совместимая модель.
-    Содержит и старые поля (stars_plan_id/renew_at),
-    и новые для помесячной логики (plan/current_period_end/cancel_at_period_end).
-    Любые запросы к этой таблице больше не должны падать по «нет такой колонки».
-    """
     __tablename__ = "subscriptions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
 
-    # --- новый вариант полей (для «подписка до конца периода»)
-    plan: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
-    status: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
-    current_period_end: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # --- Новая логика подписок ---
+    plan: Mapped[str | None] = mapped_column(String(32), nullable=True)                 # "Light" | "Max" | "Ultra"
+    status: Mapped[str] = mapped_column(String(32), default="active")                   # "active" | "canceled"
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    # --- старый вариант полей (для совместимости со старым кодом)
-    stars_plan_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    renew_at: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # --- Старые/совместимые поля (необязательные, оставляем для обратной совместимости) ---
+    stars_plan_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    renew_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-
+    
 class Payment(Base):
     __tablename__ = "payments"
 

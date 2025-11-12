@@ -132,35 +132,63 @@ def chat_create_prompt_kb() -> InlineKeyboardMarkup:
     ])
 
 # -------------------- helpers: build subscription view --------------------
+# ----- ЗАМЕНА ФУНКЦИИ -----
 async def build_subscription_view(chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
     async with httpx.AsyncClient() as client:
         r = await client.get(f"{API_BASE}/subscriptions/summary/{chat_id}")
     r.raise_for_status()
     data = r.json()
-    role = data["role"]
-    bal = data["balance_cents"] / 100
-    u, L, A, T = data["usage"], data["limits"], data["addons"], data["totals"]
+
+    role = data.get("role", "free")
+    bal  = (data.get("balance_cents") or 0) / 100
+
+    # Новая схема: limits + active_until + auto_renew
+    limits = data.get("limits") or {"messages": 0, "images": 0, "video": 0}
+    active_until = data.get("active_until")  # ISO строка или None
+    auto_renew = data.get("auto_renew", False)
+
+    # Старые поля (если бэкенд их вернёт — используем; если нет — даём дефолты)
+    usage = data.get("usage") or {"messages": 0, "images": 0, "video": 0}
+    addons = data.get("addons") or {"messages": 0, "images": 0, "video": 0}
+    totals = data.get("totals") or {
+        "messages": (limits.get("messages", 0) + addons.get("messages", 0)),
+        "images":   (limits.get("images", 0)   + addons.get("images", 0)),
+        "video":    (limits.get("video", 0)    + addons.get("video", 0)),
+    }
+
+    # Красивые строки состояния
+    if active_until:
+        # срезаем микросекунды, заменим 'T' на пробел
+        au_human = active_until.replace("T", " ").split(".")[0]
+        renew_str = "Вкл" if auto_renew else "Выкл"
+        header = (
+            f"💎 Подписка: {role}\n"
+            f"⏳ Действует до: {au_human}\n"
+            f"🔁 Автопродление: {renew_str}\n"
+            f"💰 Баланс: {bal:.0f}⭐\n\n"
+        )
+    else:
+        header = (
+            f"💎 Подписка: {role}\n"
+            f"💰 Баланс: {bal:.0f}⭐\n\n"
+        )
 
     text = (
-         f"💎 Подписка: {role}\n" +
-    (
-        f"📅 Активна до: {data['active_until'][:10]} "
-        f"{'(автопродление выключено)' if not data.get('auto_renew', True) and role!='free' else ''}\n"
-        if role != "free" and data.get("active_until") else
-        "📅 Активна: отсутствует (free)\n"
-    ) +
-        f"💰 Баланс: {bal:.0f}⭐\n\n"
+        header +
         "📊 Использование и лимиты:\n"
-        f"— Сообщения: {u['messages']}/{T['messages']} "
-        f"(базовый лимит {L['messages']}" + (f", докуплено {A['messages']}" if A['messages'] else "") + ")\n"
-        f"— Изображения: {u['images']}/{T['images']} "
-        f"(базовый лимит {L['images']}" + (f", докуплено {A['images']}" if A['images'] else "") + ")\n"
-        f"— Видео: {u['video']}/{T['video']} "
-        f"(базовый лимит {L['video']}" + (f", докуплено {A['video']}" if A['video'] else "") + ")\n\n"
+        f"— Сообщения: {usage.get('messages',0)}/{totals.get('messages',0)} "
+        f"(базовый лимит {limits.get('messages',0)}"
+        + (f", докуплено {addons.get('messages',0)}" if addons.get("messages") else "") + ")\n"
+        f"— Изображения: {usage.get('images',0)}/{totals.get('images',0)} "
+        f"(базовый лимит {limits.get('images',0)}"
+        + (f", докуплено {addons.get('images',0)}" if addons.get("images") else "") + ")\n"
+        f"— Видео: {usage.get('video',0)}/{totals.get('video',0)} "
+        f"(базовый лимит {limits.get('video',0)}"
+        + (f", докуплено {addons.get('video',0)}" if addons.get("video") else "") + ")\n\n"
         "Можешь докупить лимиты или изменить/завершить план:"
     )
-    return text, sub_card_kb()
 
+    return text, sub_card_kb()
 # -------------------- /start --------------------
 @router.message(Command("start"))
 async def cmd_start(m: Message):
