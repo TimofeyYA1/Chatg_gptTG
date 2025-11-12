@@ -28,6 +28,8 @@ router = Router()
 dp.include_router(router)
 
 API_BASE = "http://api:8000"
+API_TIMEOUT = httpx.Timeout(connect=5.0, read=25.0, write=10.0, pool=5.0)
+
 
 # -------------------- Pricing --------------------
 PRICE_PLAN_LIGHT = 275_00
@@ -140,8 +142,13 @@ async def build_subscription_view(chat_id: int) -> tuple[str, InlineKeyboardMark
     u, L, A, T = data["usage"], data["limits"], data["addons"], data["totals"]
 
     text = (
-        f"💎 Подписка: {role}\n"
-        f"📅 Активна: бессрочно\n"
+         f"💎 Подписка: {role}\n" +
+    (
+        f"📅 Активна до: {data['active_until'][:10]} "
+        f"{'(автопродление выключено)' if not data.get('auto_renew', True) and role!='free' else ''}\n"
+        if role != "free" and data.get("active_until") else
+        "📅 Активна: отсутствует (free)\n"
+    ) +
         f"💰 Баланс: {bal:.0f}⭐\n\n"
         "📊 Использование и лимиты:\n"
         f"— Сообщения: {u['messages']}/{T['messages']} "
@@ -157,14 +164,27 @@ async def build_subscription_view(chat_id: int) -> tuple[str, InlineKeyboardMark
 # -------------------- /start --------------------
 @router.message(Command("start"))
 async def cmd_start(m: Message):
-    await m.answer(
-        "✅ Готов к работе.\n\n"
-        "• 👤 Мой профиль — баланс и статус\n"
-        "• 📄 Моя подписка — текущий план / изменить / отменить\n"
-        "• 💬 Мои чаты — выбор/переименование/удаление\n"
-        "• 🖼 Генерация изображений — тестовый поток",
-        reply_markup=bottom_menu_kb(),
+    intro = (
+        "Рад видеть! 👋\n\n"
+        "<b>Давайте начнём и сделаем задачи быстрее в 2 раза.</b>\n\n"
+        "— Я — ваш ассистент бота <b>AI SuperBot</b> с подписками, лимитами и докупками.\n"
+        "— Отвечаю коротко и по делу, умею вести <u>несколько чатов</u> (переключение, переименование, удаление).\n"
+        "— Генерирую изображения (есть экономный режим), а текст — через OpenAI с минимальными токенами.\n"
+        "— Учитываю лимиты плана и сразу записываю использование в статистику.\n\n"
+        "<b>Что конкретно умею:</b>\n"
+        "• Показываю профиль: баланс/статус/подписка\n"
+        "• Карточку «Моя подписка»: докупить сообщения/изображения/видео, сменить или отменить план\n"
+        "• Управляю чатами: создание, переименование, выбор активного, удаление\n"
+        "• Генерирую изображения по описанию (пока с заглушкой при недоступности сервиса)\n\n"
+        "<b>Попробуйте готовые запросы 🚀</b>\n"
+        "— «Подскажи, чем отличается Max от Ultra?»\n"
+        "— «Сгенерируй постер в стиле ретро с роботом и городом будущего»\n"
+        "— «Переименуй активный чат в: Математика»\n"
+        "— «Сколько сообщений у меня из лимита осталось?»\n\n"
+        "Или просто напишите свой запрос 👇"
     )
+    await m.answer(intro, reply_markup=bottom_menu_kb())
+
 
 # -------------------- Profile --------------------
 @router.message(Command("account"))
@@ -431,24 +451,14 @@ async def cb_activate_chat(c: CallbackQuery):
 @router.callback_query(F.data.startswith("chats:delete:"))
 async def cb_delete_chat(c: CallbackQuery):
     sid = int(c.data.split(":")[2])
-    async with httpx.AsyncClient() as client:
-        r = await client.post(f"{API_BASE}/chats/{c.message.chat.id}/{sid}/delete")
-        if r.status_code != 200:
-            await c.answer("Не удалось удалить чат.", show_alert=True)
-            return
-        data = r.json()
+
+    # удаляем чат и просто обновляем список, без доп. сообщений
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        await client.post(f"{API_BASE}/chats/{c.message.chat.id}/{sid}/delete")
         r2 = await client.get(f"{API_BASE}/chats/{c.message.chat.id}")
-    try:
-        await c.message.edit_reply_markup(reply_markup=chats_inline_kb(r2.json()["items"]))
-    except Exception:
-        await c.message.answer("Список чатов обновлён.", reply_markup=chats_inline_kb(r2.json()["items"]))
-    # Показать какой теперь активен и его последнее сообщение
-    active_title = data.get("active_title")
-    last = data.get("last_message")
-    if active_title is not None:
-        preview = f"Активен: <b>{active_title}</b>.\n" + (f"Последнее: <i>{last}</i>" if last else "Пока без сообщений.")
-        await c.message.answer(preview)
-    await c.answer("Чат удалён")
+
+    await c.message.edit_reply_markup(reply_markup=chats_inline_kb(r2.json()["items"]))
+    await c.answer("Чат удалён")  # короткий toast, НИЧЕГО в чат не отправляем
 
 @router.callback_query(F.data.startswith("chats:clear"))
 async def cb_clear_chats(c: CallbackQuery):
@@ -546,14 +556,18 @@ async def receive_image_prompt(m: Message, state: FSMContext):
 # -------------------- Text -> API --------------------
 @router.message(F.text & ~F.text.startswith("/"))
 async def any_text(m: Message):
-    async with httpx.AsyncClient() as client:
-        r = await client.post(f"{API_BASE}/chats/{m.chat.id}/message", json={"text": m.text})
-    if r.status_code == 200:
-        reply = r.json().get("reply", "🤖 (симуляция) Ответ.")
-        await m.answer(reply)
-    else:
-        await m.answer("Не удалось сохранить сообщение. API недоступен?")
-
+    try:
+        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+            r = await client.post(f"{API_BASE}/chats/{m.chat.id}/message", json={"text": m.text})
+        if r.status_code == 200:
+            reply = r.json().get("reply", "🤖 (симуляция) Ответ.")
+            await m.answer(reply)
+        else:
+            await m.answer("🤖 (сбой API) Отправил заглушку.")
+    except httpx.ReadTimeout:
+        await m.answer("🤖 (таймаут API) Отправляю заглушку: я получил ваше сообщение и обработаю его короче.")
+    except Exception:
+        await m.answer("🤖 (ошибка сети) Пока вернул заглушку.")
 
 # -------------------- Webhook glue --------------------
 async def process_update_fastapi(body: dict):
