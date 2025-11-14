@@ -16,6 +16,7 @@ from aiogram.types import FSInputFile
 import os
 from io import BytesIO
 import base64
+from aiogram.types import Message, BufferedInputFile
 from common.config import settings
 
 # -------------------- Bot & DP --------------------
@@ -260,6 +261,8 @@ async def cmd_account(m: Message):
         f"🔗 Твоя реферальная ссылка:\nhttps://t.me/{settings.BOT_NAME}?start={m.chat.id}"
     )
     await m.answer(text, reply_markup=bottom_menu_kb())
+
+
 
 # -------------------- Subscription --------------------
 @router.message(Command("premium"))
@@ -553,20 +556,24 @@ async def cb_clear_chats(c: CallbackQuery):
 @router.message(F.text == "🖼 Генерация изображений")
 async def cmd_image(m: Message, state: FSMContext):
     await state.set_state(ImgFlow.waiting_prompt)
-    await m.answer("🖼 Введите описание изображения. (Сейчас заглушка вернёт текст)")
+    await m.answer(
+        "🖼 Введите текстовое описание изображения.\n\n"
+        "• Чтобы <b>сгенерировать новое</b> изображение — просто напишите промпт.\n"
+        "• Чтобы <b>отредактировать уже существующее</b>, пришлите фото с подписью — "
+        "в этом случае <u>всегда будет редактирование, а не генерация</u>."
+    )
 
-@router.message(ImgFlow.waiting_prompt)
-async def receive_image_prompt(m: Message, state: FSMContext):
-    prompt = (m.text or "").strip()
-    if not prompt:
-        await m.answer("Опишите изображение текстом.")
+@router.message(ImgFlow.waiting_prompt, F.text)
+async def on_image_generate_prompt(m: Message, state: FSMContext):
+    user_prompt = (m.text or "").strip()
+    if not user_prompt:
+        await m.answer("Опиши, что нужно сгенерировать.")
         return
 
-    img_bytes: BytesIO | None = None
-    api_status = None
+    await state.clear()  # Один промпт — одна генерация
 
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
             try:
                 await client.post(
                     f"{API_BASE}/usage/increment",
@@ -578,55 +585,136 @@ async def receive_image_prompt(m: Message, state: FSMContext):
 
             r = await client.post(
                 f"{API_BASE}/image/generate",
-                json={"chat_id": m.chat.id, "prompt": prompt, "size": "512x512"},
+                json={
+                    "chat_id": m.chat.id,
+                    "prompt": user_prompt,
+                    "size": "1024x1024",
+                },
                 timeout=60,
             )
-            api_status = r.status_code
+    except httpx.ReadTimeout:
+        await m.answer("🤖 (таймаут API) Не удалось сгенерировать изображение.")
+        return
+    except Exception as e:
+        await m.answer(f"🤖 (ошибка сети) Не удалось отправить запрос на генерацию: {e}")
+        return
 
-        if api_status == 200:
-            data = r.json()
-            if "b64" in data and data["b64"]:
-                raw = base64.b64decode(data["b64"])
-                img_bytes = BytesIO(raw)
-            elif "url" in data and data["url"]:
-                async with httpx.AsyncClient() as client:
-                    resp = await client.get(data["url"], timeout=60)
-                if resp.status_code == 200:
-                    img_bytes = BytesIO(resp.content)
-    except Exception:
-        img_bytes = None
+    if r.status_code != 200:
+        await m.answer("🤖 (сбой API) Не удалось сгенерировать изображение.")
+        return
 
-    fallback_path = os.path.join(os.path.dirname(__file__), "topper.jpg")
+    data = r.json()
 
-    if img_bytes is None:
-        photo = FSInputFile(fallback_path)
-        caption = (
-            "🧪 (не удалось подключиться к сервису изображений) "
-            "Возвращаю заглушку.\n"
-            f"Prompt: <i>{prompt}</i>"
+    if data.get("stub"):
+        await m.answer(
+            data.get("caption") or "🧪 (симуляция) Картинка сгенерирована."
         )
-        await m.answer_photo(photo=photo, caption=caption)
-    else:
-        img_bytes.seek(0)
-        await m.answer_photo(photo=img_bytes, caption=f"🧪 Изображение сгенерировано.\nPrompt: <i>{prompt}</i>")
+        return
 
+    b64_out = data.get("b64")
+    if not b64_out:
+        await m.answer("🤖 (ошибка API) Пустой ответ при генерации изображения.")
+        return
+
+    try:
+        out_bytes = base64.b64decode(b64_out)
+    except Exception:
+        await m.answer("🤖 (ошибка декодирования base64) Не удалось собрать картинку.")
+        return
+
+    photo_file = BufferedInputFile(out_bytes, filename="generated.png")
+    caption = data.get("caption") or user_prompt[:200]
+
+    await m.answer_photo(photo=photo_file, caption=caption)
+
+# -------------------- Photo -> API (image edit) --------------------
+@router.message(F.photo)
+async def on_photo_edit(m: Message, state: FSMContext):
+    # Если пользователь был в режиме "генерация по тексту" — выходим.
     await state.clear()
 
-# -------------------- Text -> API --------------------
-@router.message(F.text & ~F.text.startswith("/"))
-async def any_text(m: Message):
+    user_prompt = (m.caption or "").strip()
+    if not user_prompt:
+        await m.answer(
+            "Добавьте подпись к фото с инструкцией, например:\n"
+            "<i>сделай так, как будто этот человек с розовыми волосами</i>"
+        )
+        return
+
+    try:
+        photo = m.photo[-1]
+        tg_file = await bot.get_file(photo.file_id)
+        buf = await bot.download_file(tg_file.file_path)
+        if buf is None:
+            raise RuntimeError("bot.download_file вернул None")
+
+        buf.seek(0)
+        image_bytes = buf.read()
+        if not image_bytes:
+            raise RuntimeError("скачанные данные пустые")
+
+        image_b64 = base64.b64encode(image_bytes).decode("ascii")
+    except Exception as e:
+        await m.answer(
+            f"Ошибка при получении фото из Telegram: {e.__class__.__name__}: {e}"
+        )
+        return
+
     try:
         async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
-            r = await client.post(f"{API_BASE}/chats/{m.chat.id}/message", json={"text": m.text})
-        if r.status_code == 200:
-            reply = r.json().get("reply", "🤖 (симуляция) Ответ.")
-            await m.answer(reply)
-        else:
-            await m.answer("🤖 (сбой API) Отправил заглушку.")
+            try:
+                await client.post(
+                    f"{API_BASE}/usage/increment",
+                    json={"chat_id": m.chat.id, "kind": "images", "value": 1},
+                    timeout=10,
+                )
+            except Exception:
+                pass
+
+            r = await client.post(
+                f"{API_BASE}/image/edit",
+                json={
+                    "chat_id": m.chat.id,
+                    "prompt": user_prompt,
+                    "image_b64": image_b64,
+                    "size": "1024x1024",
+                },
+                timeout=60,
+            )
     except httpx.ReadTimeout:
-        await m.answer("🤖 (таймаут API) Отправляю заглушку: я получил ваше сообщение и обработаю его короче.")
+        await m.answer("🤖 (таймаут API) Не удалось обработать фото.")
+        return
+    except Exception as e:
+        await m.answer(f"🤖 (ошибка сети) Не удалось отправить фото в API: {e}")
+        return
+
+    if r.status_code != 200:
+        await m.answer("🤖 (сбой API) Не удалось обработать фото.")
+        return
+
+    data = r.json()
+
+    if data.get("stub"):
+        await m.answer(
+            data.get("caption") or "🧪 (симуляция) Изображение обработано."
+        )
+        return
+
+    b64_out = data.get("b64")
+    if not b64_out:
+        await m.answer("🤖 (ошибка API) Пустой ответ при обработке фото.")
+        return
+
+    try:
+        out_bytes = base64.b64decode(b64_out)
     except Exception:
-        await m.answer("🤖 (ошибка сети) Пока вернул заглушку.")
+        await m.answer("🤖 (ошибка декодирования base64) Не удалось собрать картинку.")
+        return
+
+    photo_file = BufferedInputFile(out_bytes, filename="edited.png")
+    caption = data.get("caption") or user_prompt[:200]
+
+    await m.answer_photo(photo=photo_file, caption=caption)
 
 # -------------------- Webhook glue --------------------
 async def process_update_fastapi(body: dict):

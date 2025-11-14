@@ -1,86 +1,116 @@
-# test_openai.py
+# common/openai_balance.py
+"""
+Простой скрипт: получить текущий баланс OpenAI (кредиты).
+Использует OPENAI_API_KEY из common.config.Settings.
+
+Запуск из консоли:
+    python -m common.openai_balance
+"""
+
 from __future__ import annotations
-import sys
-from openai import OpenAI
+
+from typing import Any, Dict
+
+import requests
+
 from common.config import settings
 
-
-def print_header():
-    print("OPENAI_ENABLED:", settings.OPENAI_ENABLED)
-    print("OPENAI_API_KEY set:", bool(settings.OPENAI_API_KEY))
-    print("CHAT MODEL:", settings.OPENAI_MODEL_CHAT, " IMAGE MODEL:", settings.OPENAI_MODEL_IMAGE)
+API_BASE = "https://api.openai.com"
 
 
-def chat_with_best_api(client: OpenAI, model: str) -> str:
+class OpenAIBalanceError(RuntimeError):
+    pass
+
+
+def _get_headers() -> Dict[str, str]:
+    api_key = settings.OPENAI_API_KEY
+    if not api_key:
+        raise OpenAIBalanceError("OPENAI_API_KEY пуст. Задай его в .env / переменных окружения.")
+    return {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+
+def fetch_credit_grants(timeout: int = 30) -> Dict[str, Any]:
     """
-    Унифицированный вызов:
-    - gpt-5* → Responses API
-    - прочие  → Chat Completions API
-    Возвращает строку-ответа (короткую).
-    """
-    user_prompt = "Скажи одно короткое слово: тест"
-    max_tokens = min(16, settings.OPENAI_MAX_OUTPUT_TOKENS or 16)
-    temperature = float(settings.OPENAI_TEMPERATURE or 0.1)
+    Основной эндпоинт для баланса кредитов:
+      GET /v1/dashboard/billing/credit_grants
 
-    # gpt-5 и новые — через Responses API
-    if model.lower().startswith("gpt-5"):
-        resp = client.responses.create(
-            model=model,
-            input=[
-                {"role": "user", "content": [{"type": "text", "text": user_prompt}]}
-            ],
-            max_output_tokens=max_tokens,
-            temperature=temperature,
+    Для некоторых аккаунтов может работать иначе или быть недоступен.
+    В этом случае просто пробрасываем ошибку с текстом ответа.
+    """
+    try:
+        resp = requests.get(
+            f"{API_BASE}/v1/dashboard/billing/credit_grants",
+            headers=_get_headers(),
+            timeout=timeout,
         )
-        # Унифицированное получение текста из Responses API:
-        return (resp.output_text or "").strip()
+    except requests.RequestException as e:
+        raise OpenAIBalanceError(f"Сетевая ошибка: {e!r}") from e
 
-    # остальное — классический Chat Completions
-    resp = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": user_prompt}],
-        max_tokens=max_tokens,
-        temperature=temperature,
-    )
-    return (resp.choices[0].message.content or "").strip()
+    if resp.status_code != 200:
+        # Показываем текст ошибки, чтобы было понятно, что не так
+        raise OpenAIBalanceError(
+            f"Ошибка {resp.status_code} при запросе /v1/dashboard/billing/credit_grants: {resp.text}"
+        )
 
-
-def test_image(client: OpenAI, model: str) -> int:
-    """
-    Возвращает длину base64, если ок.
-    """
-    img = client.images.generate(
-        model=model,
-        prompt="simple black square icon",
-        size="512x512",
-        response_format="b64_json",
-        n=1,
-    )
-    return len(img.data[0].b64_json)
-
-
-def main():
-    print_header()
-
-    if not (settings.OPENAI_ENABLED and settings.OPENAI_API_KEY):
-        print("⛔ Провайдер выключен или нет ключа")
-        sys.exit(1)
-
-    client = OpenAI(api_key=settings.OPENAI_API_KEY, timeout=20.0)
-
-    # --- CHAT ---
     try:
-        text = chat_with_best_api(client, settings.OPENAI_MODEL_CHAT)
-        print("✅ CHAT OK:", text or "(пусто)")
-    except Exception as e:
-        print("❌ CHAT FAIL:", repr(e))
+        return resp.json()
+    except ValueError as e:
+        raise OpenAIBalanceError(f"Не удалось распарсить JSON: {resp.text}") from e
 
-    # --- IMAGE ---
+
+def get_balance(timeout: int = 30) -> Dict[str, float]:
+    """
+    Вернуть баланс в виде словаря:
+    {
+        "total_granted": <float | None>,
+        "total_used": <float | None>,
+        "total_available": <float | None>,
+    }
+
+    Значения обычно в USD.
+    """
+    data = fetch_credit_grants(timeout=timeout)
+
+    # В большинстве случаев структура:
+    # {
+    #   "object": "credit_summary",
+    #   "total_granted": 5.0,
+    #   "total_used": 1.23,
+    #   "total_available": 3.77,
+    #   "grants": {...}
+    # }
+    total_granted = data.get("total_granted")
+    total_used = data.get("total_used")
+    total_available = data.get("total_available")
+
+    # Если по какой-то причине эти поля отсутствуют — просто вернём None.
+    return {
+        "total_granted": float(total_granted) if total_granted is not None else None,
+        "total_used": float(total_used) if total_used is not None else None,
+        "total_available": float(total_available) if total_available is not None else None,
+    }
+
+
+# ---------------- CLI ----------------
+
+def main() -> None:
+    """
+    Запуск как скрипта:
+        python -m common.openai_balance
+    """
     try:
-        b64len = test_image(client, settings.OPENAI_MODEL_IMAGE)
-        print("✅ IMAGE OK: b64 length =", b64len)
-    except Exception as e:
-        print("❌ IMAGE FAIL:", repr(e))
+        balance = get_balance()
+    except OpenAIBalanceError as e:
+        print(f"[ERROR] {e}")
+        return
+
+    print("=== OpenAI balance (credits) ===")
+    print(f"Total granted:   {balance['total_granted']}")
+    print(f"Total used:      {balance['total_used']}")
+    print(f"Total available: {balance['total_available']}")
 
 
 if __name__ == "__main__":
