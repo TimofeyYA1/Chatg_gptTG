@@ -4,16 +4,22 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import (
-    Integer, String, DateTime, ForeignKey, Text, Boolean, BigInteger, event, Column
+    Integer,
+    String,
+    DateTime,
+    ForeignKey,
+    Text,
+    Boolean,
+    BigInteger,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
-from sqlalchemy import Integer, String, DateTime, ForeignKey, Text, Boolean, BigInteger
-from sqlalchemy.sql import func
+
 from db_adapter.database import Base
 
 
 # -------------------- USERS & CREDITS --------------------
+
 
 class User(Base):
     __tablename__ = "users"
@@ -22,63 +28,78 @@ class User(Base):
     chat_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
     username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     role: Mapped[str] = mapped_column(String(50), default="free")
-    balance_cents: Mapped[int] = mapped_column(Integer, default=0)  # баланс в «звёздах»/центах
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    balance_cents: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
-    # relations
-    premium: Mapped[Optional["PremiumCredits"]] = relationship(
+    premium: Mapped["PremiumCredits"] = relationship(
         "PremiumCredits",
         back_populates="user",
         uselist=False,
-        cascade="all, delete-orphan",
-        lazy="joined",
     )
+
     sessions: Mapped[list["ChatSession"]] = relationship(
-        "ChatSession", back_populates="user", cascade="all, delete-orphan"
+        "ChatSession",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
 
 
 class PremiumCredits(Base):
     __tablename__ = "premium_credits"
 
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
-
-    # лимиты/кредиты
-    web_queries_left: Mapped[int] = mapped_column(Integer, default=0)
-    image_credits: Mapped[int] = mapped_column(Integer, default=0)
-    video_seconds_left: Mapped[int] = mapped_column(Integer, default=0)
-    promo_source: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-
-    # использование (счётчики)
-    total_queries: Mapped[int] = mapped_column(Integer, default=0)
-    web_queries: Mapped[int] = mapped_column(Integer, default=0)
-
-    # relation
-    user: Mapped["User"] = relationship("User", back_populates="premium")
-
-
-# Автоматически создаём PremiumCredits сразу после вставки User (на случай, если юзер создан не через subscriptions-роутер)
-@event.listens_for(User, "after_insert")
-def _create_premium_after_user_insert(mapper, connection, target: User):
-    connection.execute(
-        PremiumCredits.__table__.insert().values(user_id=target.id)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
     )
+
+    user: Mapped["User"] = relationship(
+        "User",
+        back_populates="premium",
+    )
+
+    # базовые лимиты по подписке
+    msg_limit_base: Mapped[int] = mapped_column(Integer, default=0)
+    img_limit_base: Mapped[int] = mapped_column(Integer, default=0)
+    video_limit_base: Mapped[int] = mapped_column(Integer, default=0)
+
+    # usage (фактическое потребление)
+    total_queries: Mapped[int] = mapped_column(Integer, default=0)       # текст
+    web_queries: Mapped[int] = mapped_column(Integer, default=0)         # картинки
+    video_used: Mapped[int] = mapped_column(Integer, default=0)          # видео
+
+    # докупленные лимиты
+    web_queries_left: Mapped[int] = mapped_column(Integer, default=0)    # доп. текст
+    image_credits: Mapped[int] = mapped_column(Integer, default=0)       # доп. изображения
+    video_seconds_left: Mapped[int] = mapped_column(Integer, default=0)  # доп. видео
 
 
 # -------------------- CHATS --------------------
+
 
 class ChatSession(Base):
     __tablename__ = "chat_sessions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
+    )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
     user: Mapped["User"] = relationship("User", back_populates="sessions")
     messages: Mapped[list["ChatMessage"]] = relationship(
-        "ChatMessage", back_populates="session", cascade="all, delete-orphan"
+        "ChatMessage",
+        back_populates="session",
+        cascade="all, delete-orphan",
     )
 
 
@@ -86,15 +107,21 @@ class ChatMessage(Base):
     __tablename__ = "chat_messages"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    session_id: Mapped[int] = mapped_column(ForeignKey("chat_sessions.id", ondelete="CASCADE"), index=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("chat_sessions.id", ondelete="CASCADE"),
+        index=True,
+    )
     role: Mapped[str] = mapped_column(String(32))  # "user" | "assistant" | ...
     content: Mapped[str] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
     session: Mapped["ChatSession"] = relationship("ChatSession", back_populates="messages")
 
 
-# -------------------- VIDEO JOBS / REFERRALS / FILES / SUBSCRIPTIONS / PAYMENTS --------------------
+# -------------------- VIDEO / REFERRALS / FILES / SUBSCRIPTIONS / PAYMENTS --------------------
+
 
 class VideoJob(Base):
     __tablename__ = "video_jobs"
@@ -108,7 +135,9 @@ class VideoJob(Base):
     status: Mapped[str] = mapped_column(String(32), default="queued")
     result_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     seconds_billed: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class Referral(Base):
@@ -118,7 +147,9 @@ class Referral(Base):
     referrer_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     invited_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     bonus_awarded: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class File(Base):
@@ -129,28 +160,36 @@ class File(Base):
     kind: Mapped[str] = mapped_column(String(16))  # voice|image|doc
     url: Mapped[str] = mapped_column(Text)
     sha256: Mapped[str] = mapped_column(String(64))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class Subscription(Base):
     __tablename__ = "subscriptions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
+    )
 
-    # --- Новая логика подписок ---
-    plan: Mapped[str | None] = mapped_column(String(32), nullable=True)                 # "Light" | "Max" | "Ultra"
-    status: Mapped[str] = mapped_column(String(32), default="active")                   # "active" | "canceled"
-    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    plan: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)  # "Light" | "Max" | "Ultra"
+    status: Mapped[str] = mapped_column(String(32), default="active")       # "active" | "canceled"
+    current_period_end: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    # --- Старые/совместимые поля (необязательные, оставляем для обратной совместимости) ---
-    stars_plan_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    renew_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # legacy-поля
+    stars_plan_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    renew_at: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
-    
+
 class Payment(Base):
     __tablename__ = "payments"
 
@@ -158,4 +197,6 @@ class Payment(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     stars_payment_id: Mapped[str] = mapped_column(String(128), unique=True)
     status: Mapped[str] = mapped_column(String(32))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

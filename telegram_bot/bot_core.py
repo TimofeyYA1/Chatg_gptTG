@@ -390,7 +390,6 @@ async def cb_topup(c: CallbackQuery):
     else:
         await c.answer("Ошибка пополнения", show_alert=True)
 
-
 @router.message(F.text == "🎁 Премиум бесплатно")
 async def premium_free(m: Message):
     try:
@@ -452,7 +451,6 @@ async def cb_create_chat_cancel(c: CallbackQuery, state: FSMContext):
     if prompt_msg_id:
         await _safe_delete(c.message.chat.id, prompt_msg_id)
     await state.clear()
-    await c.answer("Отменено")
 
 @router.callback_query(F.data == "chat:new:skip")
 async def cb_create_chat_skip(c: CallbackQuery, state: FSMContext):
@@ -527,7 +525,6 @@ async def cb_delete_chat(c: CallbackQuery):
         await client.post(f"{API_BASE}/chats/{c.message.chat.id}/{sid}/delete")
         r2 = await client.get(f"{API_BASE}/chats/{c.message.chat.id}")
     await c.message.edit_reply_markup(reply_markup=chats_inline_kb(r2.json()["items"]))
-    await c.answer("Чат удалён")
 
 @router.callback_query(F.data.startswith("chats:clear"))
 async def cb_clear_chats(c: CallbackQuery):
@@ -556,12 +553,22 @@ async def cb_clear_chats(c: CallbackQuery):
 @router.message(F.text == "🖼 Генерация изображений")
 async def cmd_image(m: Message, state: FSMContext):
     await state.set_state(ImgFlow.waiting_prompt)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Отменить генерацию", callback_data="img:cancel")]
+    ])
+
     await m.answer(
         "🖼 Введите текстовое описание изображения.\n\n"
-        "• Чтобы <b>сгенерировать новое</b> изображение — просто напишите промпт.\n"
-        "• Чтобы <b>отредактировать уже существующее</b>, пришлите фото с подписью — "
-        "в этом случае <u>всегда будет редактирование, а не генерация</u>."
+        "• Чтобы <b>сгенерировать новое</b> изображение — просто напишите промпт.\n",
+        reply_markup=kb
     )
+     
+@router.callback_query(F.data == "img:cancel")
+async def img_cancel(c: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await _safe_delete(c.message.chat.id, c.message.message_id)
+    await c.answer()
 
 @router.message(ImgFlow.waiting_prompt, F.text)
 async def on_image_generate_prompt(m: Message, state: FSMContext):
@@ -570,18 +577,26 @@ async def on_image_generate_prompt(m: Message, state: FSMContext):
         await m.answer("Опиши, что нужно сгенерировать.")
         return
 
-    await state.clear()  # Один промпт — одна генерация
+    await state.clear()
 
     try:
         async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
-            try:
-                await client.post(
-                    f"{API_BASE}/usage/increment",
-                    json={"chat_id": m.chat.id, "kind": "images", "value": 1},
-                    timeout=10,
+            usage_r = await client.post(
+                f"{API_BASE}/usage/increment",
+                json={"chat_id": m.chat.id, "kind": "images", "value": 1},
+                timeout=10,
+            )
+
+            if usage_r.status_code == 402:
+                await m.answer(
+                    "Лимит генераций изображений исчерпан.\n"
+                    "Открой «📄 Моя подписка», чтобы докупить лимиты или сменить план."
                 )
-            except Exception:
-                pass
+                return
+
+            if usage_r.status_code != 200:
+                await m.answer("Не удалось проверить лимит изображений. Попробуй чуть позже.")
+                return
 
             r = await client.post(
                 f"{API_BASE}/image/generate",
@@ -630,7 +645,6 @@ async def on_image_generate_prompt(m: Message, state: FSMContext):
 # -------------------- Photo -> API (image edit) --------------------
 @router.message(F.photo)
 async def on_photo_edit(m: Message, state: FSMContext):
-    # Если пользователь был в режиме "генерация по тексту" — выходим.
     await state.clear()
 
     user_prompt = (m.caption or "").strip()
@@ -662,14 +676,22 @@ async def on_photo_edit(m: Message, state: FSMContext):
 
     try:
         async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
-            try:
-                await client.post(
-                    f"{API_BASE}/usage/increment",
-                    json={"chat_id": m.chat.id, "kind": "images", "value": 1},
-                    timeout=10,
+            usage_r = await client.post(
+                f"{API_BASE}/usage/increment",
+                json={"chat_id": m.chat.id, "kind": "images", "value": 1},
+                timeout=10,
+            )
+
+            if usage_r.status_code == 402:
+                await m.answer(
+                    "Лимит редактирования изображений исчерпан.\n"
+                    "Открой «📄 Моя подписка», чтобы докупить лимиты или сменить план."
                 )
-            except Exception:
-                pass
+                return
+
+            if usage_r.status_code != 200:
+                await m.answer("Не удалось проверить лимит изображений. Попробуй чуть позже.")
+                return
 
             r = await client.post(
                 f"{API_BASE}/image/edit",
@@ -715,6 +737,68 @@ async def on_photo_edit(m: Message, state: FSMContext):
     caption = data.get("caption") or user_prompt[:200]
 
     await m.answer_photo(photo=photo_file, caption=caption)
+@router.message(F.text & ~F.text.startswith("/"))
+async def any_text(m: Message, state: FSMContext):
+    # если пользователь сейчас в режиме ввода промпта для генерации картинок — сюда не лезем
+    if await state.get_state() == ImgFlow.waiting_prompt.state:
+        return
+
+    text = (m.text or "").strip()
+    if not text:
+        return
+
+    # не шлём в ИИ системные кнопки нижнего меню
+    if text in {
+        "👤 Мой профиль",
+        "💬 Мои чаты",
+        "📄 Моя подписка",
+        "🖼 Генерация изображений",
+        "🎁 Премиум бесплатно",
+        "💰 Пополнить баланс",
+    }:
+        return
+
+    try:
+        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+            # сначала проверяем /списываем лимит текстовых сообщений
+            try:
+                usage_r = await client.post(
+                    f"{API_BASE}/usage/increment",
+                    json={"chat_id": m.chat.id, "kind": "messages", "value": 1},
+                    timeout=10,
+                )
+            except Exception:
+                usage_r = None
+
+            if usage_r is not None:
+                if usage_r.status_code == 402:
+                    await m.answer(
+                        "Лимит текстовых сообщений исчерпан.\n"
+                        "Открой «📄 Моя подписка», чтобы докупить лимиты или сменить план."
+                    )
+                    return
+                if usage_r.status_code not in (200, 204):
+                    await m.answer("Не удалось проверить лимит сообщений. Попробуй чуть позже.")
+                    return
+
+            # всё ок по лимитам — шлём сообщение в бэкенд-чаты (там уже и история, и OpenAI)
+            r = await client.post(
+                f"{API_BASE}/chats/{m.chat.id}/message",
+                json={"text": text},
+                timeout=60,
+            )
+    except httpx.ReadTimeout:
+        await m.answer("🤖 (таймаут API) Не удалось получить ответ.")
+        return
+    except Exception as e:
+        await m.answer(f"🤖 (ошибка сети) Не удалось отправить запрос в API: {e}")
+        return
+
+    if r.status_code == 200:
+        reply = r.json().get("reply", "🤖 (симуляция) Ответ.")
+        await m.answer(reply)
+    else:
+        await m.answer("Не удалось сохранить сообщение. API недоступен?")
 
 # -------------------- Webhook glue --------------------
 async def process_update_fastapi(body: dict):

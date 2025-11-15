@@ -1,23 +1,33 @@
-# api_server/routers/payments.py
-from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from db_adapter.database import get_db
 from db_adapter.models import User, PremiumCredits
+from pydantic import BaseModel
+from sqlalchemy import select
+from db_adapter.models import User 
 
-router = APIRouter(prefix="/payments", tags=["payments"])
+class BalanceTopupIn(BaseModel):
+    chat_id: int
+    amount: int
+
+    
+router = APIRouter( tags=["payments"])
 
 def _get_or_create_user(db: Session, chat_id: int) -> User:
-    u = db.execute(select(User).where(User.chat_id == chat_id)).scalar_one_or_none()
-    if u:
-        return u
-    u = User(chat_id=chat_id, role="free", balance_cents=0)
-    db.add(u); db.flush()
-    db.add(PremiumCredits(user_id=u.id))
-    db.commit(); db.refresh(u)
-    return u
+    user = db.execute(
+        select(User).where(User.chat_id == chat_id)
+    ).scalar_one_or_none()
+
+    if user:
+        return user
+
+    user = User(chat_id=chat_id, role="free", balance_cents=0)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
 
 # --- Баланс ---
 @router.get("/balance/{chat_id}")

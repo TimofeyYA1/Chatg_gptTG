@@ -1,44 +1,81 @@
+from __future__ import annotations
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import select
+
 from db_adapter.database import get_db
 from db_adapter.models import User, PremiumCredits
 
-router = APIRouter()
+router = APIRouter( tags=["usage"])
+
 
 def _get_or_create_user(db: Session, chat_id: int) -> User:
-    user = db.query(User).filter(User.chat_id == chat_id).first()
-    if not user:
-        user = User(chat_id=chat_id, role="free", balance_cents=0)
-        db.add(user); db.flush()
-        db.add(PremiumCredits(user_id=user.id))
-        db.commit()
-        db.refresh(user)
+    user = db.execute(
+        select(User).where(User.chat_id == chat_id)
+    ).scalar_one_or_none()
+
+    if user:
+        return user
+
+    user = User(chat_id=chat_id, role="free", balance_cents=0)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    # создаём пустые кредиты сразу (но только один раз)
+    credits = PremiumCredits(user_id=user.id)
+    db.add(credits)
+    db.commit()
+
     return user
 
+
+def _get_or_create_credits(db: Session, user: User) -> PremiumCredits:
+    credits = db.execute(
+        select(PremiumCredits).where(PremiumCredits.user_id == user.id)
+    ).scalar_one_or_none()
+
+    if credits:
+        return credits
+
+    credits = PremiumCredits(user_id=user.id)
+    db.add(credits)
+    db.commit()
+    db.refresh(credits)
+    return credits
+
+
 @router.post("/increment")
-def increment_usage(payload: dict, db: Session = Depends(get_db)):
+def increment(payload: dict, db: Session = Depends(get_db)):
     """
     payload: { chat_id: int, kind: "messages"|"images"|"video", value?: int }
-    messages -> PremiumCredits.total_queries
-    images   -> PremiumCredits.web_queries
+
+    messages -> total_queries
+    images   -> web_queries
+    video    -> video_used
     """
-    chat_id = int(payload.get("chat_id"))
-    kind = str(payload.get("kind"))
-    value = int(payload.get("value", 1))
+    try:
+        chat_id = int(payload.get("chat_id"))
+        kind = str(payload.get("kind"))
+        value = int(payload.get("value", 1))
+    except Exception:
+        raise HTTPException(400, "invalid payload")
+
     if value <= 0:
         raise HTTPException(400, "value must be positive")
     if kind not in {"messages", "images", "video"}:
         raise HTTPException(400, "invalid kind")
 
     user = _get_or_create_user(db, chat_id)
-    p = user.premium
+    credits = _get_or_create_credits(db, user)
+
     if kind == "messages":
-        p.total_queries = (p.total_queries or 0) + value
+        credits.total_queries = (credits.total_queries or 0) + value
     elif kind == "images":
-        p.web_queries = (p.web_queries or 0) + value
+        credits.web_queries = (credits.web_queries or 0) + value
     elif kind == "video":
-        # счётчик использования видео пока не ведём
-        pass
+        credits.video_used = (credits.video_used or 0) + value
 
     db.commit()
     return {"ok": True}
