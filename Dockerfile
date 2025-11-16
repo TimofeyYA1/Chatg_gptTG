@@ -9,7 +9,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
-
+COPY fonts /app/fonts
 RUN printf '#!/usr/bin/env bash\nset -e\ncurl -sf http://localhost:8000/healthz > /dev/null\n' > /healthcheck.sh && chmod +x /healthcheck.sh
 
 CMD ["bash", "-lc", "uvicorn api_server.main:app --host 0.0.0.0 --port 8000"]

@@ -7,7 +7,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from db_adapter.database import get_db
-from db_adapter.models import User, Subscription, PremiumCredits
+from db_adapter.models import User, Subscription, PremiumCredits, Referral
+from sqlalchemy import select
+from common.config import settings
+from pydantic import BaseModel
+
+
+BONUS_DEFAULT_SUBSCRIPTION_CENTS = getattr(settings, "REFERRAL_SUBSCRIPTION_BONUS_CENTS", 100_00)
 
 router = APIRouter( tags=["subscriptions"])
 
@@ -16,7 +22,7 @@ PLANS = {
     "Max":   {"price_cents": 450_00, "limits": {"messages": 100 * 30, "images": 1000, "video": 10}},
     "Ultra": {"price_cents": 1333_00,"limits": {"messages": 500 * 30, "images": 2500, "video": 100}},
 }
-FREE_LIMITS = {"messages": 0, "images": 0, "video": 0}
+FREE_LIMITS = {"messages": 1, "images": 1, "video": 0}
 
 
 def _now() -> datetime:
@@ -52,6 +58,59 @@ def _get_or_create_credits(db: Session, user_id: int) -> PremiumCredits:
     db.refresh(p)
     return p
 
+
+def _apply_referral_subscription_bonus(
+    db: Session,
+    user: User,
+) -> dict:
+    """
+    Если user пришёл по рефке и по нему ещё не выдавали
+    бонус за платную подписку — начисляем +100⭐ обоим.
+
+    Возвращаем словарь, чтобы бот мог отправить пуши.
+    """
+
+    bonus_cents = BONUS_DEFAULT_SUBSCRIPTION_CENTS
+    if bonus_cents <= 0:
+        return {"applied": False}
+
+    # Ищем реферальную запись, где этот юзер был приглашённым
+    ref = db.execute(
+        select(Referral).where(
+            Referral.invited_user_id == user.id,
+            Referral.bonus_awarded.is_(False),
+        )
+    ).scalar_one_or_none()
+
+    if not ref:
+        return {"applied": False}
+
+    referrer = db.get(User, ref.referrer_id)
+    if not referrer:
+        return {"applied": False}
+
+    # Начисляем бонус обоим
+    referrer.balance_cents = (referrer.balance_cents or 0) + bonus_cents
+    user.balance_cents = (user.balance_cents or 0) + bonus_cents
+
+    ref.bonus_awarded = True
+
+    db.commit()
+    db.refresh(ref)
+    db.refresh(user)
+    db.refresh(referrer)
+
+    return {
+        "applied": True,
+        "bonus_cents": bonus_cents,
+        "referrer_chat_id": referrer.chat_id,
+        "invited_chat_id": user.chat_id,
+    }
+
+class SetPlanIn(BaseModel):
+    chat_id: int
+    plan: str
+    price_cents: int
 
 @router.get("/summary/{chat_id}")
 def summary(chat_id: int, db: Session = Depends(get_db)):
@@ -123,10 +182,8 @@ def summary(chat_id: int, db: Session = Depends(get_db)):
         "addons": addons,
         "totals": totals,
     }
-
-
 @router.post("/set_plan")
-def set_plan(payload: dict, db: Session = Depends(get_db)):
+def set_plan(payload: SetPlanIn, db: Session = Depends(get_db)):
     """
     Покупка/продление на месяц:
       - списываем звёзды
@@ -134,24 +191,37 @@ def set_plan(payload: dict, db: Session = Depends(get_db)):
       - обновляем базовые лимиты в PremiumCredits под план
       - usage НЕ обнуляем руками здесь (можно добавить при желании)
     """
-    try:
-        chat_id = int(payload["chat_id"])
-        plan = str(payload["plan"])
-        price_cents = int(payload["price_cents"])
-    except Exception:
-        raise HTTPException(400, "invalid payload")
+    # 1. Достаём поля из Pydantic-модели
+    chat_id = payload.chat_id
+    plan = payload.plan
+    price_cents = payload.price_cents
 
+    # 2. Валидируем план и цену
     if plan not in PLANS:
-        raise HTTPException(400, "unknown plan")
-    if price_cents != PLANS[plan]["price_cents"]:
-        raise HTTPException(400, "price mismatch")
+        raise HTTPException(status_code=400, detail="unknown plan")
 
-    user = _get_or_create_user(db, chat_id)
-    if user.balance_cents < price_cents:
-        raise HTTPException(402, "insufficient funds")
+    expected_price = PLANS[plan]["price_cents"]
+    if price_cents != expected_price:
+        raise HTTPException(status_code=400, detail="price mismatch")
 
-    user.balance_cents -= price_cents
+    # 3. Ищем/создаём пользователя
+    user = db.execute(
+        select(User).where(User.chat_id == chat_id)
+    ).scalar_one_or_none()
+    if not user:
+        user = User(chat_id=chat_id)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
 
+    # 4. Проверяем баланс
+    current_balance = user.balance_cents or 0
+    if current_balance < price_cents:
+        raise HTTPException(status_code=402, detail="insufficient funds")
+
+    user.balance_cents = current_balance - price_cents
+
+    # 5. Работа с подпиской
     sub = _get_sub(db, user.id)
     start_from = _now()
     if sub and sub.current_period_end and sub.current_period_end > start_from:
@@ -174,7 +244,7 @@ def set_plan(payload: dict, db: Session = Depends(get_db)):
         sub.current_period_end = end
         sub.cancel_at_period_end = False
 
-    # подтягиваем лимиты плана в PremiumCredits
+    # 6. Обновляем лимиты по плану
     credits = _get_or_create_credits(db, user.id)
     plan_limits = PLANS[plan]["limits"]
 
@@ -183,7 +253,18 @@ def set_plan(payload: dict, db: Session = Depends(get_db)):
     credits.video_limit_base = plan_limits["video"]
 
     db.commit()
-    return {"ok": True, "plan": plan, "active_until": end.isoformat()}
+    db.refresh(user)
+    db.refresh(sub)
+    db.refresh(credits)
+
+    # 7. Применяем реферальный бонус за платную подписку
+    referral_bonus = _apply_referral_subscription_bonus(db, user)
+
+    return {
+        "ok": True,
+        "plan": plan,
+        "referral_bonus": referral_bonus,
+    }
 
 
 @router.post("/cancel")

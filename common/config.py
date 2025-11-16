@@ -74,6 +74,11 @@ class Settings(BaseSettings):
         populate_by_name=True,
         extra="ignore",
     )
+    DEEPGRAM_API_KEY: str = Field(
+        'None',
+        validation_alias=AliasChoices("DEEPGRAM_API_KEY", "DEEPGRAM_API_KEY"),
+    )
+
 
 
 settings = Settings()
