@@ -1,5 +1,6 @@
 from __future__ import annotations
 from datetime import datetime, timezone
+
 from dateutil.relativedelta import relativedelta
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -8,7 +9,7 @@ from sqlalchemy.orm import Session
 from db_adapter.database import get_db
 from db_adapter.models import User, Subscription, PremiumCredits
 
-router = APIRouter()
+router = APIRouter( tags=["subscriptions"])
 
 PLANS = {
     "Light": {"price_cents": 275_00, "limits": {"messages": 50 * 30,  "images": 500,  "video": 0}},
@@ -28,8 +29,6 @@ def _get_or_create_user(db: Session, chat_id: int) -> User:
         return u
     u = User(chat_id=chat_id, role="free", balance_cents=0)
     db.add(u)
-    db.flush()
-    db.add(PremiumCredits(user_id=u.id))
     db.commit()
     db.refresh(u)
     return u
@@ -41,24 +40,42 @@ def _get_sub(db: Session, user_id: int) -> Subscription | None:
     ).scalar_one_or_none()
 
 
-def _get_or_create_credits(db: Session, user: User) -> PremiumCredits:
-    p = user.premium
+def _get_or_create_credits(db: Session, user_id: int) -> PremiumCredits:
+    p = db.execute(
+        select(PremiumCredits).where(PremiumCredits.user_id == user_id)
+    ).scalar_one_or_none()
     if p:
         return p
-    p = PremiumCredits(user_id=user.id)
+    p = PremiumCredits(user_id=user_id)
     db.add(p)
-    db.flush()
+    db.commit()
     db.refresh(p)
     return p
 
 
 @router.get("/summary/{chat_id}")
-def sub_summary(chat_id: int, db: Session = Depends(get_db)):
+def summary(chat_id: int, db: Session = Depends(get_db)):
+    """
+    Возвращает:
+      - role
+      - balance_cents
+      - active_until, auto_renew
+      - limits: базовые лимиты (из PremiumCredits, а не из PLANS напрямую)
+      - usage: фактическое использование
+      - addons: докупленные
+      - totals: base + addons
+    """
     user = _get_or_create_user(db, chat_id)
     sub = _get_sub(db, user.id)
-    credits = _get_or_create_credits(db, user)
+    credits = _get_or_create_credits(db, user.id)
 
+    # ленивое истечение подписки
     if sub and sub.current_period_end and _now() >= sub.current_period_end:
+        # при окончании плана обнуляем базовые лимиты
+        credits.msg_limit_base = 0
+        credits.img_limit_base = 0
+        credits.video_limit_base = 0
+
         db.delete(sub)
         db.commit()
         sub = None
@@ -78,16 +95,16 @@ def sub_summary(chat_id: int, db: Session = Depends(get_db)):
         "video": credits.video_limit_base or 0,
     }
 
-    addons = {
-        "messages": credits.web_queries_left or 0,
-        "images": credits.image_credits or 0,
-        "video": credits.video_seconds_left or 0,
-    }
-
     usage = {
         "messages": credits.total_queries or 0,
         "images": credits.web_queries or 0,
         "video": credits.video_used or 0,
+    }
+
+    addons = {
+        "messages": credits.web_queries_left or 0,
+        "images": credits.image_credits or 0,
+        "video": credits.video_seconds_left or 0,
     }
 
     totals = {
@@ -95,10 +112,6 @@ def sub_summary(chat_id: int, db: Session = Depends(get_db)):
         "images": limits["images"] + addons["images"],
         "video": limits["video"] + addons["video"],
     }
-
-    # для совместимости со старым фронтом: если подписки нет, но лимиты не заданы
-    if role == "free" and limits == {"messages": 0, "images": 0, "video": 0}:
-        limits = FREE_LIMITS
 
     return {
         "role": role,
@@ -114,6 +127,13 @@ def sub_summary(chat_id: int, db: Session = Depends(get_db)):
 
 @router.post("/set_plan")
 def set_plan(payload: dict, db: Session = Depends(get_db)):
+    """
+    Покупка/продление на месяц:
+      - списываем звёзды
+      - продлеваем current_period_end
+      - обновляем базовые лимиты в PremiumCredits под план
+      - usage НЕ обнуляем руками здесь (можно добавить при желании)
+    """
     try:
         chat_id = int(payload["chat_id"])
         plan = str(payload["plan"])
@@ -154,16 +174,13 @@ def set_plan(payload: dict, db: Session = Depends(get_db)):
         sub.current_period_end = end
         sub.cancel_at_period_end = False
 
-    credits = _get_or_create_credits(db, user)
+    # подтягиваем лимиты плана в PremiumCredits
+    credits = _get_or_create_credits(db, user.id)
     plan_limits = PLANS[plan]["limits"]
 
-    credits.msg_limit_base = plan_limits.get("messages", 0)
-    credits.img_limit_base = plan_limits.get("images", 0)
-    credits.video_limit_base = plan_limits.get("video", 0)
-
-    credits.total_queries = 0
-    credits.web_queries = 0
-    credits.video_used = 0
+    credits.msg_limit_base = plan_limits["messages"]
+    credits.img_limit_base = plan_limits["images"]
+    credits.video_limit_base = plan_limits["video"]
 
     db.commit()
     return {"ok": True, "plan": plan, "active_until": end.isoformat()}
@@ -171,6 +188,11 @@ def set_plan(payload: dict, db: Session = Depends(get_db)):
 
 @router.post("/cancel")
 def cancel(payload: dict, db: Session = Depends(get_db)):
+    """
+    Отмена автопродления:
+      - флаг cancel_at_period_end = True
+      - статус 'canceled', доступ остаётся до current_period_end
+    """
     try:
         chat_id = int(payload["chat_id"])
     except Exception:

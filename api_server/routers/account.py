@@ -9,15 +9,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from db_adapter.database import get_db
-from db_adapter.models import User, Subscription
+from db_adapter.models import User, Subscription, PremiumCredits
 
-# Пытаемся импортировать PremiumCredits, но не падаем, если модели нет
-try:
-    from db_adapter.models import PremiumCredits  # type: ignore
-except Exception:  # таблицы/модели может не быть
-    PremiumCredits = None  # type: ignore[misc,assignment]
-
-router = APIRouter()
+router = APIRouter(tags=["account"])
 
 
 # -------------------- helpers --------------------
@@ -27,14 +21,18 @@ def _now() -> datetime:
 
 
 def _get_or_create_user(db: Session, chat_id: int) -> User:
-    u = db.execute(select(User).where(User.chat_id == chat_id)).scalar_one_or_none()
-    if u:
-        return u
-    u = User(chat_id=chat_id)
-    db.add(u)
+    user = db.execute(
+        select(User).where(User.chat_id == chat_id)
+    ).scalar_one_or_none()
+    if user:
+        return user
+
+    # дефолты для нового пользователя
+    user = User(chat_id=chat_id, role="free", balance_cents=0)
+    db.add(user)
     db.commit()
-    db.refresh(u)
-    return u
+    db.refresh(user)
+    return user
 
 
 def _get_sub(db: Session, user_id: int) -> Optional[Subscription]:
@@ -43,50 +41,70 @@ def _get_sub(db: Session, user_id: int) -> Optional[Subscription]:
     ).scalar_one_or_none()
 
 
-def _get_premium(db: Session, user_id: int):
+def _get_or_create_credits(db: Session, user: User) -> PremiumCredits:
     """
-    Безопасно возвращает объект PremiumCredits или None, если:
-    - модели нет,
-    - таблицы нет,
-    - записи нет.
+    Гарантированно возвращает PremiumCredits для юзера.
     """
-    if PremiumCredits is None:
-        return None
-    try:
-        return db.execute(
-            select(PremiumCredits).where(PremiumCredits.user_id == user_id)  # type: ignore[attr-defined]
-        ).scalar_one_or_none()
-    except Exception:
-        # на случай, если таблицы нет/миграции не применены
-        return None
+    p = user.premium
+    if p:
+        return p
+
+    p = PremiumCredits(user_id=user.id)
+    db.add(p)
+    db.commit()
+    db.refresh(p)
+    return p
 
 
 # -------------------- routes --------------------
 
 @router.get("/profile/{chat_id}")
 def profile(chat_id: int, db: Session = Depends(get_db)):
+    """
+    Профиль пользователя + подписка + реальная статистика использования и лимитов.
+    """
     user = _get_or_create_user(db, chat_id)
     sub = _get_sub(db, user.id)
-    prem = _get_premium(db, user.id)
+    credits = _get_or_create_credits(db, user)
 
-    # подписка: активна, если срок не истёк
+    # --- подписка ---
     role = "free"
-    active_until_iso = None
+    active_until_iso: str | None = None
+
     if sub and (sub.current_period_end is None or _now() < sub.current_period_end):
         role = sub.plan or "free"
-        active_until_iso = sub.current_period_end.isoformat() if sub.current_period_end else None
+        active_until_iso = (
+            sub.current_period_end.isoformat()
+            if sub.current_period_end
+            else None
+        )
 
-    # премиум-кредиты — безопасные дефолты
+    # --- usage из PremiumCredits ---
+    usage = {
+        "messages": credits.total_queries or 0,   # сколько текстовых запросов сделал
+        "images":   credits.web_queries or 0,     # сколько фактически использовано генераций картинок
+        "video":    credits.video_used or 0,      # сколько фактически использовано видео
+    }
+
+    # --- лимиты / докупки ---
     premium_block = {
-        "web_queries_left": getattr(prem, "web_queries_left", 0),
-        "images_left": getattr(prem, "images_left", 0),
-        "video_seconds_left": getattr(prem, "video_seconds_left", 0),
+        # базовые лимиты по тарифу (могут заполняться логикой подписки)
+        "msg_limit_base":   credits.msg_limit_base or 0,
+        "img_limit_base":   credits.img_limit_base or 0,
+        "video_limit_base": credits.video_limit_base or 0,
+
+        # докупленные/оставшиеся лимиты сверху
+        "web_queries_left":   credits.web_queries_left or 0,   # доп. текст
+        "image_credits":      credits.image_credits or 0,      # доп. картинки
+        "video_seconds_left": credits.video_seconds_left or 0, # доп. видео
     }
 
     return {
         "chat_id": chat_id,
+        "username": user.username,
         "balance_cents": user.balance_cents,
         "role": role,
         "active_until": active_until_iso,
+        "usage": usage,
         "premium": premium_block,
     }

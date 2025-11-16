@@ -10,13 +10,11 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (
     Message, Update, InlineKeyboardMarkup, InlineKeyboardButton,
     CallbackQuery, ReplyKeyboardMarkup, KeyboardButton,
+    BufferedInputFile,
 )
 import httpx
-from aiogram.types import FSInputFile
-import os
-from io import BytesIO
 import base64
-from aiogram.types import Message, BufferedInputFile
+
 from common.config import settings
 
 # -------------------- Bot & DP --------------------
@@ -31,24 +29,25 @@ dp.include_router(router)
 API_BASE = "http://api:8000"
 API_TIMEOUT = httpx.Timeout(connect=5.0, read=25.0, write=10.0, pool=5.0)
 
-
 # -------------------- Pricing --------------------
 PRICE_PLAN_LIGHT = 275_00
-PRICE_PLAN_MAX   = 450_00
+PRICE_PLAN_MAX = 450_00
 PRICE_PLAN_ULTRA = 1333_00
 
 ADDON_PRICES = {
     "messages": {50: 50_00, 200: 180_00, 500: 400_00},
-    "images":   {100: 120_00, 500: 500_00, 1000: 900_00},
-    "video":    {5: 150_00, 20: 500_00, 50: 1000_00},
+    "images": {100: 120_00, 500: 500_00, 1000: 900_00},
+    "video": {5: 150_00, 20: 500_00, 50: 1000_00},  # пока не используем, но пусть лежит
 }
 
 # -------------------- FSM --------------------
 class ImgFlow(StatesGroup):
     waiting_prompt = State()
 
+
 class ChatCreateFlow(StatesGroup):
     waiting_title = State()
+
 
 # -------------------- Keyboards --------------------
 def bottom_menu_kb() -> ReplyKeyboardMarkup:
@@ -62,46 +61,74 @@ def bottom_menu_kb() -> ReplyKeyboardMarkup:
         is_persistent=True,
     )
 
+
 def sub_card_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💬 Докупить сообщения", callback_data="addon:pick:messages")],
-        [InlineKeyboardButton(text="🖼 Докупить изображения", callback_data="addon:pick:images")],
-        [InlineKeyboardButton(text="🎬 Докупить видео",      callback_data="addon:pick:video")],
-        [InlineKeyboardButton(text="⚙️ Изменить план",       callback_data="sub:change")],
-        [InlineKeyboardButton(text="❌ Завершить подписку",  callback_data="sub:cancel")],
-    ])
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="💬 Докупить сообщения", callback_data="addon:pick:messages")],
+            [InlineKeyboardButton(text="🖼 Докупить изображения", callback_data="addon:pick:images")],
+            [InlineKeyboardButton(text="⚙️ Изменить план", callback_data="sub:change")],
+            [InlineKeyboardButton(text="❌ Завершить подписку", callback_data="sub:cancel")],
+        ]
+    )
+
 
 def addon_options_kb(kind: str) -> InlineKeyboardMarkup:
     rows = []
     for qty, price in ADDON_PRICES[kind].items():
-        rows.append([InlineKeyboardButton(text=f"+{qty} за {price//100}⭐", callback_data=f"addon:buy:{kind}:{qty}:{price}")])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"+{qty} за {price // 100}⭐",
+                    callback_data=f"addon:buy:{kind}:{qty}:{price}",
+                )
+            ]
+        )
     rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="sub:open")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
 
 def plans_inline_kb_with_text() -> tuple[str, InlineKeyboardMarkup]:
     text = (
         "🔁 Изменение тарифного плана.\n\n"
         "Выбери новый план:\n\n"
         "💠 Light\n"
-        "• 50 запросов/день\n• 500 изображений/мес\n• 0 видео/мес\n"
+        "• 50 запросов/день\n• 500 изображений/мес\n"
         "• Голосовые до 1 мин\n• Голосовые ответы: нет\n• Экспорт в .docx/.pdf: нет\n"
-        f"• Цена: {PRICE_PLAN_LIGHT//100}⭐/мес\n\n"
+        f"• Цена: {PRICE_PLAN_LIGHT // 100}⭐/мес\n\n"
         "💠 Max\n"
-        "• 100 запросов/день\n• 1000 изображений/мес\n• 10 видео/мес\n"
+        "• 100 запросов/день\n• 1000 изображений/мес\n"
         "• Голосовые до 10 мин\n• Голосовые ответы: да\n• Экспорт в .docx/.pdf: да\n"
-        f"• Цена: {PRICE_PLAN_MAX//100}⭐/мес\n\n"
+        f"• Цена: {PRICE_PLAN_MAX // 100}⭐/мес\n\n"
         "💠 Ultra\n"
-        "• 500 запросов/день\n• 2500 изображений/мес\n• 100 видео/мес\n"
+        "• 500 запросов/день\n• 2500 изображений/мес\n"
         "• Голосовые до 20 мин\n• Голосовые ответы: да\n• Экспорт в .docx/.pdf: да\n"
-        f"• Цена: {PRICE_PLAN_ULTRA//100}⭐/мес"
+        f"• Цена: {PRICE_PLAN_ULTRA // 100}⭐/мес"
     )
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💠 Light", callback_data=f"sub:buyplan:Light:{PRICE_PLAN_LIGHT}")],
-        [InlineKeyboardButton(text="💠 Max",   callback_data=f"sub:buyplan:Max:{PRICE_PLAN_MAX}")],
-        [InlineKeyboardButton(text="⚡ Ultra", callback_data=f"sub:buyplan:Ultra:{PRICE_PLAN_ULTRA}")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="sub:open")],
-    ])
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="💠 Light",
+                    callback_data=f"sub:buyplan:Light:{PRICE_PLAN_LIGHT}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="💠 Max", callback_data=f"sub:buyplan:Max:{PRICE_PLAN_MAX}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⚡ Ultra",
+                    callback_data=f"sub:buyplan:Ultra:{PRICE_PLAN_ULTRA}",
+                )
+            ],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="sub:open")],
+        ]
+    )
     return text, kb
+
 
 def chats_inline_kb(items: list[dict]) -> InlineKeyboardMarkup:
     """
@@ -111,26 +138,59 @@ def chats_inline_kb(items: list[dict]) -> InlineKeyboardMarkup:
     rows = []
     for s in items:
         icon = "⭐" if s["is_active"] else "🟢"
-        rows.append([
-            InlineKeyboardButton(text=f"{icon} {s['title']}", callback_data=f"chats:activate:{s['id']}"),
-            InlineKeyboardButton(text="🗑",                    callback_data=f"chats:delete:{s['id']}")
-        ])
-    rows.append([InlineKeyboardButton(text="➕ Добавить новый чат", callback_data="chats:create")])
-    rows.append([InlineKeyboardButton(text="🗑 Удалить все чаты",   callback_data="chats:clear")])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{icon} {s['title']}",
+                    callback_data=f"chats:activate:{s['id']}",
+                ),
+                InlineKeyboardButton(
+                    text="🗑", callback_data=f"chats:delete:{s['id']}"
+                ),
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="➕ Добавить новый чат", callback_data="chats:create"
+            )
+        ]
+    )
+    rows.append(
+        [InlineKeyboardButton(text="🗑 Удалить все чаты", callback_data="chats:clear")]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
+
 def topup_inline_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Пополнить +100",  callback_data="balance:topup:10000")],
-        [InlineKeyboardButton(text="Пополнить +500",  callback_data="balance:topup:50000")],
-        [InlineKeyboardButton(text="Пополнить +1000", callback_data="balance:topup:100000")],
-    ])
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Пополнить +100", callback_data="balance:topup:10000"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Пополнить +500", callback_data="balance:topup:50000"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Пополнить +1000", callback_data="balance:topup:100000"
+                )
+            ],
+        ]
+    )
+
 
 def chat_create_prompt_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➡️ Пропустить", callback_data="chat:new:skip")],
-        [InlineKeyboardButton(text="❌ Отмена",     callback_data="chat:new:cancel")],
-    ])
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="➡️ Пропустить", callback_data="chat:new:skip")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="chat:new:cancel")],
+        ]
+    )
 
 
 # -------------------- helpers --------------------
@@ -144,6 +204,7 @@ async def _refresh_chats_markup(chat_id: int, list_msg_id: int):
         message_id=list_msg_id,
         reply_markup=chats_inline_kb(items),
     )
+
 
 async def _safe_delete(chat_id: int, message_id: int):
     try:
@@ -160,7 +221,7 @@ async def build_subscription_view(chat_id: int) -> tuple[str, InlineKeyboardMark
     data = r.json()
 
     role = data.get("role", "free")
-    bal  = (data.get("balance_cents") or 0) / 100
+    bal = (data.get("balance_cents") or 0) / 100
 
     # Новая схема: limits + active_until + auto_renew
     limits = data.get("limits") or {"messages": 0, "images": 0, "video": 0}
@@ -172,8 +233,7 @@ async def build_subscription_view(chat_id: int) -> tuple[str, InlineKeyboardMark
     addons = data.get("addons") or {"messages": 0, "images": 0, "video": 0}
     totals = data.get("totals") or {
         "messages": (limits.get("messages", 0) + addons.get("messages", 0)),
-        "images":   (limits.get("images", 0)   + addons.get("images", 0)),
-        "video":    (limits.get("video", 0)    + addons.get("video", 0)),
+        "images": (limits.get("images", 0) + addons.get("images", 0)),
     }
 
     if active_until:
@@ -182,53 +242,70 @@ async def build_subscription_view(chat_id: int) -> tuple[str, InlineKeyboardMark
         header = (
             f"💎 Подписка: {role}\n"
             f"⏳ Действует до: {au_human}\n"
-            f"🔁 Автопродление: {renew_str}\n"
             f"💰 Баланс: {bal:.0f}⭐\n\n"
         )
     else:
-        header = (
-            f"💎 Подписка: {role}\n"
-            f"💰 Баланс: {bal:.0f}⭐\n\n"
-        )
+        header = f"💎 Подписка: {role}\n" f"💰 Баланс: {bal:.0f}⭐\n\n"
 
     text = (
-        header +
-        "📊 Использование и лимиты:\n"
-        f"— Сообщения: {usage.get('messages',0)}/{totals.get('messages',0)} "
-        f"(базовый лимит {limits.get('messages',0)}"
-        + (f", докуплено {addons.get('messages',0)}" if addons.get("messages") else "") + ")\n"
-        f"— Изображения: {usage.get('images',0)}/{totals.get('images',0)} "
-        f"(базовый лимит {limits.get('images',0)}"
-        + (f", докуплено {addons.get('images',0)}" if addons.get("images") else "") + ")\n"
-        f"— Видео: {usage.get('video',0)}/{totals.get('video',0)} "
-        f"(базовый лимит {limits.get('video',0)}"
-        + (f", докуплено {addons.get('video',0)}" if addons.get("video") else "") + ")\n\n"
+        header
+        + "📊 Использование и лимиты:\n"
+        f"— Сообщения: {usage.get('messages', 0)}/{totals.get('messages', 0)} "
+        f"(базовый лимит {limits.get('messages', 0)}"
+        + (
+            f", докуплено {addons.get('messages', 0)}"
+            if addons.get("messages")
+            else ""
+        )
+        + ")\n"
+        f"— Изображения: {usage.get('images', 0)}/{totals.get('images', 0)} "
+        f"(базовый лимит {limits.get('images', 0)}"
+        + (f", докуплено {addons.get('images', 0)}" if addons.get("images") else "")
+        + ")\n"
         "Можешь докупить лимиты или изменить/завершить план:"
     )
 
     return text, sub_card_kb()
 
+
 # -------------------- /start --------------------
 @router.message(Command("start"))
 async def cmd_start(m: Message):
-    intro = (
+        intro = (
         "Рад видеть! 👋\n\n"
-        "<b>Давайте начнём и сделаем задачи быстрее в 2 раза.</b>\n\n"
-        "— Я — ваш ассистент бота <b>AI SuperBot</b> с подписками, лимитами и докупками.\n"
-        "— Отвечаю коротко и по делу, умею вести <u>несколько чатов</u> (переключение, переименование, удаление).\n"
-        "— Генерирую изображения (есть экономный режим), а текст — через OpenAI с минимальными токенами.\n"
-        "— Учитываю лимиты плана и сразу записываю использование в статистику.\n\n"
-        "<b>Что конкретно умею:</b>\n"
-        "• Показываю профиль: баланс/статус/подписка\n"
-        "• Карточку «Моя подписка»: докупить сообщения/изображения/видео, сменить или отменить план\n"
-        "• Управляю чатами: создание, переименование, выбор активного, удаление\n"
-        "• Генерирую изображения по описанию (пока с заглушкой при недоступности сервиса)\n\n"
-        "<b>Попробуйте готовые запросы 🚀</b>\n"
-        "— «Подскажи, чем отличается Max от Ultra?»\n"
-        "— «Сгенерируй постер в стиле ретро с роботом и городом будущего»\n"
-        "— «Переименуй активный чат в: Математика»\n"
-        "— «Сколько сообщений у меня из лимита осталось?»\n\n"
-        "Или просто напишите свой запрос 👇"
+        "<b>Добро пожаловать в AI SuperBot.</b>\n\n"
+        "Я — умный ассистент, который умеет:\n"
+        "• Общаться текстом, как обычный чат\n"
+        "• Запоминать контекст в рамках каждого чата\n"
+        "• Генерировать новые изображения по описанию\n"
+        "• Редактировать присланные фото по вашему запросу\n"
+        "• Работать с подписками, лимитами и докупками\n\n"
+        "<b>1. Как общаться с текстовой моделью</b>\n"
+        "• Просто напишите любое сообщение в этот чат — вопрос, задачу, идею.\n"
+        "• Я отвечу текстом прямо сюда.\n"
+        "• Вся переписка в активном чате сохраняется, и я учитываю историю при ответе.\n"
+        "  То есть, можно продолжать диалог: задавать уточнения, ссылаться на прошлый контекст.\n\n"
+        "<b>2. Несколько чатов и контекст</b>\n"
+        "• Кнопка <b>«💬 Мои чаты»</b> — там можно создавать несколько отдельных диалогов.\n"
+        "• У каждого чата <u>свой</u> контекст и история: работа, учеба, личные вопросы — всё раздельно.\n"
+        "• Можно переключать активный чат, переименовывать и удалять чаты.\n\n"
+        "<b>3. Как сгенерировать новое изображение</b>\n"
+        "1) Нажмите кнопку <b>«🖼 Генерация изображений»</b> в нижнем меню.\n"
+        "2) Бот попросит вас ввести описание (промпт).\n"
+        "3) Просто напишите, что вы хотите увидеть: стиль, объекты, атмосферу и т.д.\n"
+        "   Например: <i>«реалистичный портрет кота в костюме космонавта, фон — космос»</i>.\n"
+        "4) Я запущу генерацию и верну готовое изображение в этот чат.\n\n"
+        "<b>4. Как отредактировать уже существующее фото</b>\n"
+        "1) Отправьте фото как обычно.\n"
+        "2) В подписи к фото напишите, что нужно изменить.\n"
+        "   Например: <i>«сделай небо ярче и добавь салют»</i> или <i>«сделай волосы белыми</i>.\n"
+        "3) Я обработаю изображение и пришлю обновлённый вариант.\n\n"
+        "<b>5. Подписка, лимиты и баланс</b>\n"
+        "• В разделе <b>«📄 Моя подписка»</b> можно посмотреть лимиты на сообщения и изображения,\n"
+        "  а также докупить дополнительные пакеты.\n"
+        "• В разделе <b>«💰 Пополнить баланс»</b> можно пополнить баланс звёздами.\n"
+        "• В профиле <b>«👤 Мой профиль»</b> видно текущий баланс и статус подписки.\n\n"
+        "Готов к работе. Просто напишите свой первый запрос 👇"
     )
     await m.answer(intro, reply_markup=bottom_menu_kb())
 
@@ -242,9 +319,15 @@ async def cmd_account(m: Message):
     if r.status_code != 200:
         await m.answer("API недоступен.")
         return
+
     data = r.json()
-    bal = data.get("balance_cents", 0) / 100
+    bal = (data.get("balance_cents") or 0) / 100
     role = data.get("role", "free")
+
+    usage = data.get("usage") or {}
+    used_msg = usage.get("messages", 0)
+    used_img = usage.get("images", 0)
+    used_video = usage.get("video", 0)
 
     text = (
         "👤 Мой профиль\n"
@@ -252,16 +335,14 @@ async def cmd_account(m: Message):
         f"💰 Баланс: {bal:.2f}⭐️\n"
         f"🔖 Подписка: {role}\n\n"
         "📊 Статистика использования (за текущий период):\n"
-        "— Сообщения (текст): 0\n"
-        "— Изображения: 0\n"
-        "— Видео: 0\n\n"
+        f"— Сообщения (текст): {used_msg}\n"
+        f"— Изображения: {used_img}\n"
         "👥 Реферальная программа:\n"
         "— Приглашено друзей: 0\n"
         "— Оформили подписку: 0\n\n"
         f"🔗 Твоя реферальная ссылка:\nhttps://t.me/{settings.BOT_NAME}?start={m.chat.id}"
     )
     await m.answer(text, reply_markup=bottom_menu_kb())
-
 
 
 # -------------------- Subscription --------------------
@@ -276,6 +357,7 @@ async def open_subscription(m: Message):
         return
     await m.answer(text, reply_markup=kb)
 
+
 @router.callback_query(F.data == "sub:open")
 async def cb_sub_open(c: CallbackQuery):
     try:
@@ -286,6 +368,7 @@ async def cb_sub_open(c: CallbackQuery):
         await bot.send_message(c.message.chat.id, text, reply_markup=kb)
     await c.answer()
 
+
 @router.callback_query(F.data == "sub:change")
 async def cb_sub_change(c: CallbackQuery):
     text, kb = plans_inline_kb_with_text()
@@ -294,6 +377,7 @@ async def cb_sub_change(c: CallbackQuery):
     except Exception:
         await bot.send_message(c.message.chat.id, text, reply_markup=kb)
     await c.answer()
+
 
 @router.callback_query(F.data.startswith("sub:buyplan:"))
 async def cb_plan_buy(c: CallbackQuery):
@@ -316,10 +400,14 @@ async def cb_plan_buy(c: CallbackQuery):
     else:
         await c.answer("Ошибка при изменении плана.", show_alert=True)
 
+
 @router.callback_query(F.data == "sub:cancel")
 async def cb_plan_cancel(c: CallbackQuery):
     async with httpx.AsyncClient() as client:
-        r = await client.post(f"{API_BASE}/subscriptions/cancel", json={"chat_id": c.message.chat.id})
+        r = await client.post(
+            f"{API_BASE}/subscriptions/cancel",
+            json={"chat_id": c.message.chat.id},
+        )
     if r.status_code == 200:
         await c.answer("Подписка отменена. Текущий план: free", show_alert=True)
         text, kb = await build_subscription_view(c.message.chat.id)
@@ -330,15 +418,23 @@ async def cb_plan_cancel(c: CallbackQuery):
     else:
         await c.answer("Ошибка при отмене.", show_alert=True)
 
+
 # -------------------- Addons --------------------
 @router.callback_query(F.data.startswith("addon:pick:"))
 async def cb_addon_pick(c: CallbackQuery):
     kind = c.data.split(":")[2]
     try:
-        await c.message.edit_text("Выбери пакет докупки:", reply_markup=addon_options_kb(kind))
+        await c.message.edit_text(
+            "Выбери пакет докупки:", reply_markup=addon_options_kb(kind)
+        )
     except Exception:
-        await bot.send_message(c.message.chat.id, "Выбери пакет докупки:", reply_markup=addon_options_kb(kind))
+        await bot.send_message(
+            c.message.chat.id,
+            "Выбери пакет докупки:",
+            reply_markup=addon_options_kb(kind),
+        )
     await c.answer()
+
 
 @router.callback_query(F.data.startswith("addon:buy:"))
 async def cb_addon_buy(c: CallbackQuery):
@@ -347,7 +443,12 @@ async def cb_addon_buy(c: CallbackQuery):
     async with httpx.AsyncClient() as client:
         r = await client.post(
             f"{API_BASE}/payments/addons/buy",
-            json={"chat_id": c.message.chat.id, "kind": kind, "qty": qty, "price_cents": price},
+            json={
+                "chat_id": c.message.chat.id,
+                "kind": kind,
+                "qty": qty,
+                "price_cents": price,
+            },
         )
     if r.status_code == 200:
         await c.answer("Лимиты докуплены ✅", show_alert=True)
@@ -361,6 +462,7 @@ async def cb_addon_buy(c: CallbackQuery):
     else:
         await c.answer("Ошибка докупки.", show_alert=True)
 
+
 # -------------------- Balance topup --------------------
 @router.message(F.text == "💰 Пополнить баланс")
 async def topup_menu(m: Message):
@@ -371,6 +473,7 @@ async def topup_menu(m: Message):
         f"💰 Текущий баланс: <b>{bal:.2f}⭐</b>\nВыбери сумму пополнения:",
         reply_markup=topup_inline_kb(),
     )
+
 
 @router.callback_query(F.data.startswith("balance:topup:"))
 async def cb_topup(c: CallbackQuery):
@@ -390,6 +493,7 @@ async def cb_topup(c: CallbackQuery):
     else:
         await c.answer("Ошибка пополнения", show_alert=True)
 
+
 @router.message(F.text == "🎁 Премиум бесплатно")
 async def premium_free(m: Message):
     try:
@@ -398,11 +502,15 @@ async def premium_free(m: Message):
         data = r.json()
         invited = data.get("invited", 0)
         subscribed = data.get("subscribed", 0)
-        ref_link = data.get("ref_link") or f"https://t.me/{getattr(settings, 'BOT_NAME', 'ai_superbot')}?start={m.chat.id}"
+        ref_link = data.get("ref_link") or (
+            f"https://t.me/{getattr(settings, 'BOT_NAME', 'ai_superbot')}?start={m.chat.id}"
+        )
     except Exception:
         invited = 0
         subscribed = 0
-        ref_link = f"https://t.me/{getattr(settings, 'BOT_NAME', 'ai_superbot')}?start={m.chat.id}"
+        ref_link = (
+            f"https://t.me/{getattr(settings, 'BOT_NAME', 'feedback904_bot')}?start={m.chat.id}"
+        )
 
     text = (
         "🎁 <b>Премиум бесплатно — реферальная программа</b>\n\n"
@@ -422,7 +530,7 @@ async def premium_free(m: Message):
     )
     await m.answer(text, reply_markup=bottom_menu_kb())
 
-    
+
 # -------------------- Chats --------------------
 @router.message(F.text == "💬 Мои чаты")
 async def chats_btn(m: Message):
@@ -431,11 +539,12 @@ async def chats_btn(m: Message):
     kb = chats_inline_kb(r.json()["items"])
     await m.answer("💬 <b>Твои чаты</b>", reply_markup=kb)
 
+
 # Создание нового чата — показываем запрос имени, помним id списка
 @router.callback_query(F.data == "chats:create")
 async def cb_create_chat_start(c: CallbackQuery, state: FSMContext):
     await state.set_state(ChatCreateFlow.waiting_title)
-    await state.update_data(list_msg_id=c.message.message_id)  # помним СТАРОЕ сообщение со списком
+    await state.update_data(list_msg_id=c.message.message_id)
     msg = await c.message.answer(
         "🆕 Введите название нового чата (до 100 символов).\n"
         "Можно нажать «➡️ Пропустить», чтобы использовать имя по умолчанию.",
@@ -443,6 +552,7 @@ async def cb_create_chat_start(c: CallbackQuery, state: FSMContext):
     )
     await state.update_data(prompt_msg_id=msg.message_id)
     await c.answer()
+
 
 @router.callback_query(F.data == "chat:new:cancel")
 async def cb_create_chat_cancel(c: CallbackQuery, state: FSMContext):
@@ -452,6 +562,7 @@ async def cb_create_chat_cancel(c: CallbackQuery, state: FSMContext):
         await _safe_delete(c.message.chat.id, prompt_msg_id)
     await state.clear()
 
+
 @router.callback_query(F.data == "chat:new:skip")
 async def cb_create_chat_skip(c: CallbackQuery, state: FSMContext):
     data = await state.get_data()
@@ -459,7 +570,7 @@ async def cb_create_chat_skip(c: CallbackQuery, state: FSMContext):
     prompt_msg_id = data.get("prompt_msg_id")
 
     async with httpx.AsyncClient() as client:
-        await client.post(f"{API_BASE}/chats/{c.message.chat.id}/create")  # без названия
+        await client.post(f"{API_BASE}/chats/{c.message.chat.id}/create")
     if list_msg_id:
         await _refresh_chats_markup(c.message.chat.id, list_msg_id)
     if prompt_msg_id:
@@ -467,6 +578,7 @@ async def cb_create_chat_skip(c: CallbackQuery, state: FSMContext):
 
     await state.clear()
     await c.answer("Чат создан")
+
 
 @router.message(ChatCreateFlow.waiting_title)
 async def receive_new_chat_title(m: Message, state: FSMContext):
@@ -483,23 +595,27 @@ async def receive_new_chat_title(m: Message, state: FSMContext):
         return
 
     async with httpx.AsyncClient() as client:
-        await client.post(f"{API_BASE}/chats/{m.chat.id}/create", json={"title": title or None})
+        await client.post(
+            f"{API_BASE}/chats/{m.chat.id}/create", json={"title": title or None}
+        )
 
     if list_msg_id:
         await _refresh_chats_markup(m.chat.id, list_msg_id)
     if prompt_msg_id:
         await _safe_delete(m.chat.id, prompt_msg_id)
-    # удалим сообщение с введённым именем
     await _safe_delete(m.chat.id, m.message_id)
 
     await state.clear()
+
 
 # Активация
 @router.callback_query(F.data.startswith("chats:activate:"))
 async def cb_activate_chat(c: CallbackQuery):
     sid = int(c.data.split(":")[2])
     async with httpx.AsyncClient() as client:
-        r = await client.post(f"{API_BASE}/chats/{c.message.chat.id}/{sid}/activate")
+        r = await client.post(
+            f"{API_BASE}/chats/{c.message.chat.id}/{sid}/activate"
+        )
         if r.status_code != 200:
             await c.answer("Не удалось активировать чат (API 500).", show_alert=True)
             return
@@ -510,12 +626,19 @@ async def cb_activate_chat(c: CallbackQuery):
             reply_markup=chats_inline_kb(r2.json()["items"])
         )
     except Exception:
-        await c.message.answer("Список чатов обновлён.", reply_markup=chats_inline_kb(r2.json()["items"]))
+        await c.message.answer(
+            "Список чатов обновлён.", reply_markup=chats_inline_kb(r2.json()["items"])
+        )
     last = payload.get("last_message")
     title = payload.get("title")
-    preview = f"Последнее сообщение в <b>{title}</b>:\n<i>{last}</i>" if last else f"<b>{title}</b> пока пустой."
+    preview = (
+        f"Последнее сообщение в <b>{title}</b>:\n<i>{last}</i>"
+        if last
+        else f"<b>{title}</b> пока пустой."
+    )
     await c.message.answer(preview)
     await c.answer("Сделан активным")
+
 
 # Удаление конкретного чата
 @router.callback_query(F.data.startswith("chats:delete:"))
@@ -524,7 +647,10 @@ async def cb_delete_chat(c: CallbackQuery):
     async with httpx.AsyncClient(timeout=8.0) as client:
         await client.post(f"{API_BASE}/chats/{c.message.chat.id}/{sid}/delete")
         r2 = await client.get(f"{API_BASE}/chats/{c.message.chat.id}")
-    await c.message.edit_reply_markup(reply_markup=chats_inline_kb(r2.json()["items"]))
+    await c.message.edit_reply_markup(
+        reply_markup=chats_inline_kb(r2.json()["items"])
+    )
+
 
 @router.callback_query(F.data.startswith("chats:clear"))
 async def cb_clear_chats(c: CallbackQuery):
@@ -533,7 +659,7 @@ async def cb_clear_chats(c: CallbackQuery):
         r = await client.post(f"{API_BASE}/chats/{chat_id}/clear")
         ok = r.status_code == 200
         data = r.json() if ok else {}
-        items = (data.get("items") or [])
+        items = data.get("items") or []
         if not items:
             r2 = await client.get(f"{API_BASE}/chats/{chat_id}")
             if r2.status_code == 200:
@@ -548,27 +674,36 @@ async def cb_clear_chats(c: CallbackQuery):
 
     await c.answer("Все чаты удалены")
 
-# -------------------- Image (stub) --------------------
+
+# -------------------- Image: генерация --------------------
 @router.message(Command("image"))
 @router.message(F.text == "🖼 Генерация изображений")
 async def cmd_image(m: Message, state: FSMContext):
     await state.set_state(ImgFlow.waiting_prompt)
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="❌ Отменить генерацию", callback_data="img:cancel")]
-    ])
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ Отменить генерацию", callback_data="img:cancel"
+                )
+            ]
+        ]
+    )
 
     await m.answer(
         "🖼 Введите текстовое описание изображения.\n\n"
         "• Чтобы <b>сгенерировать новое</b> изображение — просто напишите промпт.\n",
-        reply_markup=kb
+        reply_markup=kb,
     )
-     
+
+
 @router.callback_query(F.data == "img:cancel")
 async def img_cancel(c: CallbackQuery, state: FSMContext):
     await state.clear()
     await _safe_delete(c.message.chat.id, c.message.message_id)
     await c.answer()
+
 
 @router.message(ImgFlow.waiting_prompt, F.text)
 async def on_image_generate_prompt(m: Message, state: FSMContext):
@@ -577,7 +712,13 @@ async def on_image_generate_prompt(m: Message, state: FSMContext):
         await m.answer("Опиши, что нужно сгенерировать.")
         return
 
+    # выходим из состояния
     await state.clear()
+
+    # сообщение об ожидании
+    status_msg = await m.answer(
+        "🖼 Генерация вашего изображения в процессе, подождите…"
+    )
 
     try:
         async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
@@ -588,6 +729,7 @@ async def on_image_generate_prompt(m: Message, state: FSMContext):
             )
 
             if usage_r.status_code == 402:
+                await _safe_delete(m.chat.id, status_msg.message_id)
                 await m.answer(
                     "Лимит генераций изображений исчерпан.\n"
                     "Открой «📄 Моя подписка», чтобы докупить лимиты или сменить план."
@@ -595,7 +737,10 @@ async def on_image_generate_prompt(m: Message, state: FSMContext):
                 return
 
             if usage_r.status_code != 200:
-                await m.answer("Не удалось проверить лимит изображений. Попробуй чуть позже.")
+                await _safe_delete(m.chat.id, status_msg.message_id)
+                await m.answer(
+                    "Не удалось проверить лимит изображений. Попробуй чуть позже."
+                )
                 return
 
             r = await client.post(
@@ -608,11 +753,18 @@ async def on_image_generate_prompt(m: Message, state: FSMContext):
                 timeout=60,
             )
     except httpx.ReadTimeout:
+        await _safe_delete(m.chat.id, status_msg.message_id)
         await m.answer("🤖 (таймаут API) Не удалось сгенерировать изображение.")
         return
     except Exception as e:
-        await m.answer(f"🤖 (ошибка сети) Не удалось отправить запрос на генерацию: {e}")
+        await _safe_delete(m.chat.id, status_msg.message_id)
+        await m.answer(
+            f"🤖 (ошибка сети) Не удалось отправить запрос на генерацию: {e}"
+        )
         return
+
+    # генерация завершилась — убираем статус
+    await _safe_delete(m.chat.id, status_msg.message_id)
 
     if r.status_code != 200:
         await m.answer("🤖 (сбой API) Не удалось сгенерировать изображение.")
@@ -634,13 +786,16 @@ async def on_image_generate_prompt(m: Message, state: FSMContext):
     try:
         out_bytes = base64.b64decode(b64_out)
     except Exception:
-        await m.answer("🤖 (ошибка декодирования base64) Не удалось собрать картинку.")
+        await m.answer(
+            "🤖 (ошибка декодирования base64) Не удалось собрать картинку."
+        )
         return
 
     photo_file = BufferedInputFile(out_bytes, filename="generated.png")
     caption = data.get("caption") or user_prompt[:200]
 
     await m.answer_photo(photo=photo_file, caption=caption)
+
 
 # -------------------- Photo -> API (image edit) --------------------
 @router.message(F.photo)
@@ -651,7 +806,7 @@ async def on_photo_edit(m: Message, state: FSMContext):
     if not user_prompt:
         await m.answer(
             "Добавьте подпись к фото с инструкцией, например:\n"
-            "<i>сделай так, как будто этот человек с розовыми волосами</i>"
+            "<i>сделай так, будто у этого человека розовые волосы</i>"
         )
         return
 
@@ -674,6 +829,11 @@ async def on_photo_edit(m: Message, state: FSMContext):
         )
         return
 
+    # сообщение об ожидании обработки
+    status_msg = await m.answer(
+        "🛠 Обработка вашего изображения в процессе, подождите…"
+    )
+
     try:
         async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
             usage_r = await client.post(
@@ -683,6 +843,7 @@ async def on_photo_edit(m: Message, state: FSMContext):
             )
 
             if usage_r.status_code == 402:
+                await _safe_delete(m.chat.id, status_msg.message_id)
                 await m.answer(
                     "Лимит редактирования изображений исчерпан.\n"
                     "Открой «📄 Моя подписка», чтобы докупить лимиты или сменить план."
@@ -690,7 +851,10 @@ async def on_photo_edit(m: Message, state: FSMContext):
                 return
 
             if usage_r.status_code != 200:
-                await m.answer("Не удалось проверить лимит изображений. Попробуй чуть позже.")
+                await _safe_delete(m.chat.id, status_msg.message_id)
+                await m.answer(
+                    "Не удалось проверить лимит изображений. Попробуй чуть позже."
+                )
                 return
 
             r = await client.post(
@@ -704,11 +868,16 @@ async def on_photo_edit(m: Message, state: FSMContext):
                 timeout=60,
             )
     except httpx.ReadTimeout:
+        await _safe_delete(m.chat.id, status_msg.message_id)
         await m.answer("🤖 (таймаут API) Не удалось обработать фото.")
         return
     except Exception as e:
+        await _safe_delete(m.chat.id, status_msg.message_id)
         await m.answer(f"🤖 (ошибка сети) Не удалось отправить фото в API: {e}")
         return
+
+    # обработка завершилась — убираем статус
+    await _safe_delete(m.chat.id, status_msg.message_id)
 
     if r.status_code != 200:
         await m.answer("🤖 (сбой API) Не удалось обработать фото.")
@@ -730,13 +899,18 @@ async def on_photo_edit(m: Message, state: FSMContext):
     try:
         out_bytes = base64.b64decode(b64_out)
     except Exception:
-        await m.answer("🤖 (ошибка декодирования base64) Не удалось собрать картинку.")
+        await m.answer(
+            "🤖 (ошибка декодирования base64) Не удалось собрать картинку."
+        )
         return
 
     photo_file = BufferedInputFile(out_bytes, filename="edited.png")
     caption = data.get("caption") or user_prompt[:200]
 
     await m.answer_photo(photo=photo_file, caption=caption)
+
+
+# -------------------- Text chat --------------------
 @router.message(F.text & ~F.text.startswith("/"))
 async def any_text(m: Message, state: FSMContext):
     # если пользователь сейчас в режиме ввода промпта для генерации картинок — сюда не лезем
@@ -778,7 +952,9 @@ async def any_text(m: Message, state: FSMContext):
                     )
                     return
                 if usage_r.status_code not in (200, 204):
-                    await m.answer("Не удалось проверить лимит сообщений. Попробуй чуть позже.")
+                    await m.answer(
+                        "Не удалось проверить лимит сообщений. Попробуй чуть позже."
+                    )
                     return
 
             # всё ок по лимитам — шлём сообщение в бэкенд-чаты (там уже и история, и OpenAI)
@@ -791,7 +967,9 @@ async def any_text(m: Message, state: FSMContext):
         await m.answer("🤖 (таймаут API) Не удалось получить ответ.")
         return
     except Exception as e:
-        await m.answer(f"🤖 (ошибка сети) Не удалось отправить запрос в API: {e}")
+        await m.answer(
+            f"🤖 (ошибка сети) Не удалось отправить запрос в API: {e}"
+        )
         return
 
     if r.status_code == 200:
@@ -799,6 +977,7 @@ async def any_text(m: Message, state: FSMContext):
         await m.answer(reply)
     else:
         await m.answer("Не удалось сохранить сообщение. API недоступен?")
+
 
 # -------------------- Webhook glue --------------------
 async def process_update_fastapi(body: dict):
