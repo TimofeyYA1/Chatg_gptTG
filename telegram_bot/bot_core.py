@@ -1045,27 +1045,35 @@ async def on_image_generate_prompt(m: Message, state: FSMContext):
         await m.answer("🤖 (ошибка декодирования base64) Не удалось собрать картинку.")
         return
 
+    # --- 1) Фото с подписью ---
+
     photo_file = BufferedInputFile(out_bytes, filename="generated.png")
-    caption = data.get("caption") or user_prompt[:200]
+    made_caption = f"Made with ❤️ by @{getattr(settings, 'BOT_NAME', 'BeatyAIMasterHelpBot')}"
+ 
+    await m.answer_photo(photo=photo_file, caption=made_caption)
 
-    await m.answer_photo(photo=photo_file, caption=caption)
+    # --- 2) Отдельный файл для скачивания ---
 
+    file_doc = BufferedInputFile(out_bytes, filename="generated.png")
+    await m.answer_document(document=file_doc)
 
 # -------------------- Photo -> API (image edit) --------------------
-@router.message(F.photo)
-async def on_photo_edit(m: Message, state: FSMContext):
+
+@router.edited_message(F.photo)
+async def process_photo_edit(msg: Message, state: FSMContext):
     await state.clear()
 
-    user_prompt = (m.caption or "").strip()
+    user_prompt = (msg.caption or "").strip()
     if not user_prompt:
-        await m.answer(
+        await msg.answer(
             "Добавьте подпись к фото с инструкцией, например:\n"
             "<i>сделай так, как будто этот человек с розовыми волосами</i>"
         )
         return
 
+    # 1. тянем фото из Telegram
     try:
-        photo = m.photo[-1]
+        photo = msg.photo[-1]
         tg_file = await bot.get_file(photo.file_id)
         buf = await bot.download_file(tg_file.file_path)
         if buf is None:
@@ -1078,37 +1086,41 @@ async def on_photo_edit(m: Message, state: FSMContext):
 
         image_b64 = base64.b64encode(image_bytes).decode("ascii")
     except Exception as e:
-        await m.answer(
+        await msg.answer(
             f"Ошибка при получении фото из Telegram: {e.__class__.__name__}: {e}"
         )
         return
 
+    # 2. отправляем в API
     status_msg = None
     try:
         async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
-            status_msg = await m.answer("✏️ Обрабатываю изображение, подождите…")
+            status_msg = await msg.answer(
+                "🖼 Генерирую изображение…\n"
+                "Генерация обычно занимает 3–5 минут."
+            )
 
             usage_r = await client.post(
                 f"{API_BASE}/usage/increment",
-                json={"chat_id": m.chat.id, "kind": "images", "value": 1},
+                json={"chat_id": msg.chat.id, "kind": "images", "value": 1},
                 timeout=10,
             )
 
             if usage_r.status_code == 402:
-                await m.answer(
+                await msg.answer(
                     "Лимит редактирования изображений исчерпан.\n"
                     "Открой «📄 Моя подписка», чтобы докупить лимиты или сменить план."
                 )
                 return
 
             if usage_r.status_code != 200:
-                await m.answer("Не удалось проверить лимит изображений. Попробуй чуть позже.")
+                await msg.answer("Не удалось проверить лимит изображений. Попробуй чуть позже.")
                 return
 
             r = await client.post(
                 f"{API_BASE}/image/edit",
                 json={
-                    "chat_id": m.chat.id,
+                    "chat_id": msg.chat.id,
                     "prompt": user_prompt,
                     "image_b64": image_b64,
                     "size": "1024x1024",
@@ -1116,42 +1128,163 @@ async def on_photo_edit(m: Message, state: FSMContext):
                 timeout=60,
             )
     except httpx.ReadTimeout:
-        await m.answer("🤖 (таймаут API) Не удалось обработать фото.")
+        await msg.answer("🤖 (таймаут API) Не удалось обработать фото.")
         return
     except Exception as e:
-        await m.answer(f"🤖 (ошибка сети) Не удалось отправить фото в API: {e}")
+        await msg.answer(f"🤖 (ошибка сети) Не удалось отправить фото в API: {e}")
         return
     finally:
         if status_msg:
-            await _safe_delete(m.chat.id, status_msg.message_id)
+            await _safe_delete(msg.chat.id, status_msg.message_id)
 
+    # 3. разбираем ответ
     if r.status_code != 200:
-        await m.answer("🤖 (сбой API) Не удалось обработать фото.")
+        await msg.answer("🤖 (сбой API) Не удалось обработать фото.")
         return
 
     data = r.json()
 
     if data.get("stub"):
-        await m.answer(
-            data.get("caption") or "🧪 (симуляция) Изображение обработано."
+        await msg.answer(
+            "🧪 (симуляция) Изображение обработано.\n\n"
+            f"📝 Промпт:\n{user_prompt}"
         )
         return
 
     b64_out = data.get("b64")
     if not b64_out:
-        await m.answer("🤖 (ошибка API) Пустой ответ при обработке фото.")
+        await msg.answer("🤖 (ошибка API) Пустой ответ при обработке фото.")
         return
 
     try:
         out_bytes = base64.b64decode(b64_out)
     except Exception:
-        await m.answer("🤖 (ошибка декодирования base64) Не удалось собрать картинку.")
+        await msg.answer("🤖 (ошибка декодирования base64) Не удалось собрать картинку.")
         return
 
+    # --- 1) Фото с подписью ---
     photo_file = BufferedInputFile(out_bytes, filename="edited.png")
-    caption = data.get("caption") or user_prompt[:200]
+    made_caption = f"Made with ❤️ by @{getattr(settings, 'BOT_NAME', 'BeatyAIMasterHelpBot')}"
 
-    await m.answer_photo(photo=photo_file, caption=caption)
+    await msg.answer_photo(photo=photo_file, caption=made_caption)
+
+    # --- 2) Отдельный файл для скачивания ---
+    file_doc = BufferedInputFile(out_bytes, filename="edited.png")
+    await msg.answer_document(document=file_doc)
+
+
+@router.message(F.photo)
+async def process_photo_edit(msg: Message, state: FSMContext):
+    await state.clear()
+
+    user_prompt = (msg.caption or "").strip()
+    if not user_prompt:
+        await msg.answer(
+            "Добавьте подпись к фото с инструкцией, например:\n"
+            "<i>сделай так, как будто этот человек с розовыми волосами</i>"
+        )
+        return
+
+    # 1. тянем фото из Telegram
+    try:
+        photo = msg.photo[-1]
+        tg_file = await bot.get_file(photo.file_id)
+        buf = await bot.download_file(tg_file.file_path)
+        if buf is None:
+            raise RuntimeError("bot.download_file вернул None")
+
+        buf.seek(0)
+        image_bytes = buf.read()
+        if not image_bytes:
+            raise RuntimeError("скачанные данные пустые")
+
+        image_b64 = base64.b64encode(image_bytes).decode("ascii")
+    except Exception as e:
+        await msg.answer(
+            f"Ошибка при получении фото из Telegram: {e.__class__.__name__}: {e}"
+        )
+        return
+
+    # 2. отправляем в API
+    status_msg = None
+    try:
+        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+            status_msg = await msg.answer(
+                "🖼 Генерирую изображение…\n"
+                "Генерация обычно занимает 3–5 минут."
+            )
+
+            usage_r = await client.post(
+                f"{API_BASE}/usage/increment",
+                json={"chat_id": msg.chat.id, "kind": "images", "value": 1},
+                timeout=10,
+            )
+
+            if usage_r.status_code == 402:
+                await msg.answer(
+                    "Лимит редактирования изображений исчерпан.\n"
+                    "Открой «📄 Моя подписка», чтобы докупить лимиты или сменить план."
+                )
+                return
+
+            if usage_r.status_code != 200:
+                await msg.answer("Не удалось проверить лимит изображений. Попробуй чуть позже.")
+                return
+
+            r = await client.post(
+                f"{API_BASE}/image/edit",
+                json={
+                    "chat_id": msg.chat.id,
+                    "prompt": user_prompt,
+                    "image_b64": image_b64,
+                    "size": "1024x1024",
+                },
+                timeout=60,
+            )
+    except httpx.ReadTimeout:
+        await msg.answer("🤖 (таймаут API) Не удалось обработать фото.")
+        return
+    except Exception as e:
+        await msg.answer(f"🤖 (ошибка сети) Не удалось отправить фото в API: {e}")
+        return
+    finally:
+        if status_msg:
+            await _safe_delete(msg.chat.id, status_msg.message_id)
+
+    # 3. разбираем ответ
+    if r.status_code != 200:
+        await msg.answer("🤖 (сбой API) Не удалось обработать фото.")
+        return
+
+    data = r.json()
+
+    if data.get("stub"):
+        await msg.answer(
+            "🧪 (симуляция) Изображение обработано.\n\n"
+            f"📝 Промпт:\n{user_prompt}"
+        )
+        return
+
+    b64_out = data.get("b64")
+    if not b64_out:
+        await msg.answer("🤖 (ошибка API) Пустой ответ при обработке фото.")
+        return
+
+    try:
+        out_bytes = base64.b64decode(b64_out)
+    except Exception:
+        await msg.answer("🤖 (ошибка декодирования base64) Не удалось собрать картинку.")
+        return
+
+    # --- 1) Фото с подписью ---
+    photo_file = BufferedInputFile(out_bytes, filename="edited.png")
+    made_caption = f"Made with ❤️ by @{getattr(settings, 'BOT_NAME', 'BeatyAIMasterHelpBot')}"
+
+    await msg.answer_photo(photo=photo_file, caption=made_caption)
+
+    # --- 2) Отдельный файл для скачивания ---
+    file_doc = BufferedInputFile(out_bytes, filename="edited.png")
+    await msg.answer_document(document=file_doc)
 
 
 @router.message(F.voice)

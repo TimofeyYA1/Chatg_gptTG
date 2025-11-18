@@ -46,7 +46,7 @@ def generate_image(data: ImageIn, db: Session = Depends(get_db)):
         "ok": True,
         "stub": False,
         "b64": b64,
-        "caption": data.prompt.strip()[:200],
+        "caption": data.prompt.strip(),
     }
 
 
@@ -75,8 +75,8 @@ def edit_image(data: ImageEditIn, db: Session = Depends(get_db)):
     provider = OpenAIProvider()
 
     # 2. Улучшаем промпт через ChatGPT
-    improved_prompt = provider.improve_image_prompt(data.prompt)
-
+    # improved_prompt = provider.improve_image_prompt(data.prompt)
+    improved_prompt = data.prompt
     # 3. Пытаемся редактировать через NanoBanana
     b64 = provider.edit_image_b64(raw_image, improved_prompt, size=data.size or "768x768")
 
@@ -87,7 +87,7 @@ def edit_image(data: ImageEditIn, db: Session = Depends(get_db)):
         return {
             "ok": True,
             "stub": True,
-            "caption": improved_prompt[:200] if improved_prompt else "🖼️ (симуляция) Изображение отредактировано.",
+            "caption": improved_prompt if improved_prompt else "🖼️ (симуляция) Изображение отредактировано.",
         }
 
     # 4. Успешная обработка
@@ -95,5 +95,5 @@ def edit_image(data: ImageEditIn, db: Session = Depends(get_db)):
         "ok": True,
         "stub": False,
         "b64": b64,
-        "caption": improved_prompt[:200] if improved_prompt else data.prompt.strip()[:200],
+        "caption": improved_prompt if improved_prompt else data.prompt.strip(),
     }
