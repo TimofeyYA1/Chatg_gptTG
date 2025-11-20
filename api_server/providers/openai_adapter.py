@@ -4,6 +4,7 @@ from typing import List, Dict, Optional
 import logging
 import io
 import base64
+import time  # для бэкоффа при ретраях
 
 from openai import OpenAI
 from common.config import settings
@@ -13,8 +14,15 @@ logger = logging.getLogger(__name__)
 # Пытаемся импортировать Google GenAI (Gemini / Nano Banana)
 try:
     from google import genai as _google_genai  # type: ignore[import-not-found]
+    from google.genai import errors as genai_errors  # type: ignore[import-not-found]
 except Exception:
     _google_genai = None
+    genai_errors = None  # type: ignore[assignment]
+
+try:
+    from google.genai import errors as _google_genai_errors  # type: ignore[import-not-found]
+except Exception:
+    _google_genai_errors = None
 
 # Пытаемся импортировать Pillow (для работы с изображениями)
 try:
@@ -27,7 +35,7 @@ class OpenAIProvider:
     """
     Обёртка над:
       • OpenAI (для текста),
-      • NanoBanana (Gemini 2.5 Flash Image) для картинок (если включено в конфиге).
+      • NanoBanana (Gemini 2.5 Flash Image) для РЕДАКТИРОВАНИЯ картинок (если включено в конфиге).
     """
 
     def __init__(self) -> None:
@@ -69,7 +77,7 @@ class OpenAIProvider:
 
     def _nano_enabled(self) -> bool:
         """
-        Включен ли NanoBanana (через Gemini API).
+        Включен ли NanoBanana (через Gemini API) для картинок.
         """
         return bool(self._nano_client) and bool(
             getattr(settings, "NANOBANANA_ENABLED", False)
@@ -157,61 +165,14 @@ class OpenAIProvider:
             )
             return f"🤖 (сбой провайдера) Я получил: {text}"
 
-    # --------- TEXT: улучшение промпта для картинки ---------
-
-    def improve_image_prompt(self, raw_prompt: str) -> str:
-        """
-        Улучшить промпт для редактирования изображения.
-        Никакой фантазии — только делает текст понятным и точным.
-        """
-        p = (raw_prompt or "").strip()
-        if not p:
-            return ""
-
-        if not self.enabled():
-            return p
-
-        try:
-            system_msg = (
-                "Ты улучшаешь текстовые инструкции для редактирования изображений.\n"
-                "- НИКОГДА не добавляй ничего нового, чего нет в словах пользователя.\n"
-                "- НИКОГДА не превращай запрос в генерацию изображения.\n"
-                "- НЕ меняй композицию, объекты, сцену, фон, стиль или персонажей.\n"
-                "- Просто перепиши текст пользователя так, чтобы он был чётким, однозначным и понятным.\n"
-                "Разрешено исправить грамматику, уточнить, сделать структуру понятной.\n"
-                "Запрещено добавлять новые детали или интерпретации.\n"
-                "Ответ — только улучшенный промпт, без пояснений."
-            )
-
-            messages = [
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": p},
-            ]
-
-            params = {
-                "model": settings.OPENAI_MODEL_CHAT,
-                "messages": messages,
-                "temperature": 0.1,
-            }
-
-            max_tokens = min(settings.OPENAI_MAX_OUTPUT_TOKENS, 200)
-            if self._use_max_completion_tokens():
-                params["max_completion_tokens"] = max_tokens
-            else:
-                params["max_tokens"] = max_tokens
-
-            resp = self.client.chat.completions.create(**params)
-            out = (resp.choices[0].message.content or "").strip()
-            return out or p
-
-        except Exception:
-            logger.exception("improve_image_prompt failed, возвращаю сырой промпт")
-            return p
-
-
-    # ------------- IMAGE: NanoBanana / Gemini -------------
+    # ------------- IMAGE: NanoBanana / Gemini (EDIT ONLY) -------------
 
     def _edit_image_with_nano(self, image_bytes: bytes, prompt: str) -> str | None:
+        """
+        Внутренний метод редактирования изображения через NanoBanana
+        с агрессивными ретраями при временных ошибках / пустых parts / пустом inline_data.
+        Возвращает base64 PNG или None.
+        """
         if not self._nano_enabled():
             logger.warning("NanoBanana не настроен или выключен, edit_image недоступен.")
             return None
@@ -223,188 +184,166 @@ class OpenAIProvider:
             )
             return None
 
-        try:
-            img = Image.open(io.BytesIO(image_bytes))
+        # сколько раз пробуем в сумме
+        # по умолчанию: 5 попыток:
+        #  1–2: без задержки
+        #  3: после неё задержка 1 сек
+        #  4–5: перед следующей попыткой задержка 2 сек
+        max_retries = getattr(settings, "NANOBANANA_MAX_RETRIES", 5)
+        last_exc: Optional[Exception] = None
 
-            model_name = (
-                settings.NANOBANANA_MODEL_IMAGE
-                if getattr(settings, "NANOBANANA_MODEL_IMAGE", None)
-                else "gemini-2.5-flash-image"
-            )
+        def _sleep_before_retry(attempt: int) -> None:
+            """Логика пауз между попытками."""
+            # если следующей попытки уже не будет — не спим
+            if attempt >= max_retries:
+                return
+            # первые две попытки — без задержки
+            if attempt <= 2:
+                return
+            # третья — 1 сек, дальше — 2 сек
+            delay = 1 if attempt == 3 else 2
+            try:
+                time.sleep(delay)
+            except Exception:
+                pass
 
-            response = self._nano_client.models.generate_content(  # type: ignore[union-attr]
-                model=model_name,
-                contents=[prompt, img],
-            )
+        for attempt in range(1, max_retries + 1):
+            try:
+                img = Image.open(io.BytesIO(image_bytes))
 
-            parts = getattr(response, "parts", None)
-            if not parts and getattr(response, "candidates", None):
-                try:
-                    parts = response.candidates[0].content.parts  # type: ignore[index]
-                except Exception:
-                    parts = None
-
-            if not parts:
-                logger.warning(
-                    "NanoBanana (Gemini) не вернул parts в ответе, model=%s",
-                    model_name,
+                model_name = (
+                    settings.NANOBANANA_MODEL_IMAGE
+                    if getattr(settings, "NANOBANANA_MODEL_IMAGE", None)
+                    else "gemini-2.5-flash-image"
                 )
-                return None
 
-            for part in parts:
-                inline = getattr(part, "inline_data", None)
-                if inline is None:
-                    continue
+                response = self._nano_client.models.generate_content(  # type: ignore[union-attr]
+                    model=model_name,
+                    contents=[prompt, img],
+                )
 
-                data = getattr(inline, "data", None)
-                if not data:
-                    continue
-
-                if isinstance(data, (bytes, bytearray)):
-                    raw = data
-                elif isinstance(data, str):
+                parts = getattr(response, "parts", None)
+                if not parts and getattr(response, "candidates", None):
                     try:
-                        raw = base64.b64decode(data)
+                        parts = response.candidates[0].content.parts  # type: ignore[index]
                     except Exception:
-                        logger.warning("NanoBanana: не удалось декодировать base64 inline_data")
+                        parts = None
+
+                if not parts:
+                    # Частый кейс: IMAGE_SAFETY / SAFETY → пустые parts
+                    last_exc = RuntimeError(
+                        f"NanoBanana edit_image: empty parts (possibly safety/moderation), attempt={attempt}"
+                    )
+                    logger.warning(
+                        "NanoBanana (Gemini) не вернул parts в ответе, model=%s, attempt=%s/%s",
+                        model_name,
+                        attempt,
+                        max_retries,
+                    )
+                    _sleep_before_retry(attempt)
+                    continue
+
+                got_image = False
+
+                for part in parts:
+                    inline = getattr(part, "inline_data", None)
+                    if inline is None:
                         continue
-                else:
-                    continue
 
-                try:
-                    out_img = Image.open(io.BytesIO(raw))
-                except Exception:
-                    logger.exception("NanoBanana: не удалось распознать изображение из inline_data")
-                    continue
+                    data = getattr(inline, "data", None)
+                    if not data:
+                        continue
 
-                buf = io.BytesIO()
-                out_img.save(buf, format="PNG")
-                return base64.b64encode(buf.getvalue()).decode("utf-8")
+                    if isinstance(data, (bytes, bytearray)):
+                        raw = data
+                    elif isinstance(data, str):
+                        try:
+                            raw = base64.b64decode(data)
+                        except Exception:
+                            logger.warning(
+                                "NanoBanana: не удалось декодировать base64 inline_data (attempt=%s)",
+                                attempt,
+                            )
+                            continue
+                    else:
+                        continue
 
-            logger.warning(
-                "NanoBanana (Gemini) не найдено корректного inline_data в parts, model=%s",
-                model_name,
-            )
-            return None
-
-        except Exception:
-            logger.exception("NanoBanana edit_image_with_nano failed")
-            return None
-
-    def _generate_image_with_nano(self, prompt: str) -> str | None:
-        if not self._nano_enabled():
-            logger.warning(
-                "NanoBanana не настроен или выключен, generate_image недоступен."
-            )
-            return None
-
-        if Image is None:
-            logger.warning(
-                "Pillow (PIL) не установлен, не могу использовать NanoBanana. "
-                "Установи пакет 'Pillow' или выключи NANOBANANA_ENABLED."
-            )
-            return None
-
-        p = (prompt or "").strip()
-        if not p:
-            return None
-
-        try:
-            model_name = (
-                settings.NANOBANANA_MODEL_IMAGE
-                if getattr(settings, "NANOBANANA_MODEL_IMAGE", None)
-                else "gemini-2.5-flash-image"
-            )
-
-            response = self._nano_client.models.generate_content(  # type: ignore[union-attr]
-                model=model_name,
-                contents=[p],
-            )
-
-            parts = getattr(response, "parts", None)
-            if not parts and getattr(response, "candidates", None):
-                try:
-                    parts = response.candidates[0].content.parts  # type: ignore[index]
-                except Exception:
-                    parts = None
-
-            if not parts:
-                logger.warning(
-                    "NanoBanana (Gemini) не вернул parts при генерации, model=%s",
-                    model_name,
-                )
-                return None
-
-            for part in parts:
-                inline = getattr(part, "inline_data", None)
-                if inline is None:
-                    continue
-
-                data = getattr(inline, "data", None)
-                if not data:
-                    continue
-
-                if isinstance(data, (bytes, bytearray)):
-                    raw = data
-                elif isinstance(data, str):
                     try:
-                        raw = base64.b64decode(data)
+                        out_img = Image.open(io.BytesIO(raw))
                     except Exception:
-                        logger.warning(
-                            "NanoBanana: не удалось декодировать base64 inline_data при генерации"
+                        logger.exception(
+                            "NanoBanana: не удалось распознать изображение из inline_data (attempt=%s)",
+                            attempt,
                         )
                         continue
-                else:
-                    continue
 
-                try:
-                    out_img = Image.open(io.BytesIO(raw))
-                except Exception:
-                    logger.exception(
-                        "NanoBanana: не удалось распознать изображение из inline_data при генерации"
+                    buf = io.BytesIO()
+                    out_img.save(buf, format="PNG")
+                    got_image = True
+                    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+                if not got_image:
+                    last_exc = RuntimeError(
+                        f"NanoBanana edit_image: no valid inline_data, attempt={attempt}"
                     )
+                    logger.warning(
+                        "NanoBanana (Gemini) не найдено корректного inline_data в parts, model=%s, attempt=%s/%s",
+                        model_name,
+                        attempt,
+                        max_retries,
+                    )
+                    _sleep_before_retry(attempt)
                     continue
 
-                buf = io.BytesIO()
-                out_img.save(buf, format="PNG")
-                return base64.b64encode(buf.getvalue()).decode("utf-8")
+            except Exception as e:
+                last_exc = e
+                # Пытаемся понять, это именно временная ошибка сервера или что-то фатальное
+                is_server_error = (
+                    genai_errors is not None
+                    and isinstance(e, genai_errors.ServerError)  # type: ignore[attr-defined]
+                )
 
-            logger.warning(
-                "NanoBanana (Gemini) не найдено корректного inline_data при генерации, model=%s",
-                model_name,
+                code = None
+                if is_server_error:
+                    resp = getattr(e, "response", None)
+                    if isinstance(resp, dict):
+                        code = resp.get("error", {}).get("code")
+
+                if is_server_error and code in (500, 503):
+                    logger.error(
+                        "NanoBanana edit_image_with_nano временная ошибка (code=%s, attempt=%s/%s)",
+                        code,
+                        attempt,
+                        max_retries,
+                    )
+                else:
+                    logger.exception(
+                        "NanoBanana edit_image_with_nano failed (attempt=%s/%s)",
+                        attempt,
+                        max_retries,
+                    )
+
+                _sleep_before_retry(attempt)
+                continue
+
+        if last_exc:
+            logger.error(
+                "NanoBanana edit_image_with_nano exhausted retries, last_error=%r",
+                last_exc,
             )
-            return None
+        return None
 
-        except Exception:
-            logger.exception("NanoBanana generate_image_with_nano failed")
-            return None
-
-    # ------------- IMAGE: публичные методы -------------
-
-    def generate_image_b64(self, prompt: str, size: str = "1024x1024") -> str | None:
-        """
-        Генерация картинки по тексту ТОЛЬКО через NanoBanana.
-        Если NanoBanana недоступен — возвращаем None, чтобы верхний уровень
-        отдал заглушку. OpenAI IMAGE больше не используется.
-        """
-        p = (prompt or "").strip()
-        if not p:
-            return None
-
-        b64 = self._generate_image_with_nano(p)
-        if not b64:
-            logger.warning(
-                "NanoBanana generate_image_b64 вернул None (prompt=%r)", p[:200]
-            )
-        return b64
+    # ------------- IMAGE: публичные методы (EDIT ONLY) -------------
 
     def edit_image_b64(
         self, image_bytes: bytes, prompt: str, size: str = "1024x1024"
     ) -> str | None:
         """
         Редактирование изображения ТОЛЬКО через NanoBanana.
-        Если NanoBanana недоступен — возвращаем None, чтобы верхний уровень
-        отдал заглушку. OpenAI IMAGE edit больше не используется.
+        Генерации с нуля здесь больше нет.
+
+        Если NanoBanana недоступен или после всех ретраев не получилось —
+        возвращаем None, чтобы верхний уровень отдал заглушку / stub.
         """
         p = (prompt or "").strip()
         if not p or not image_bytes:

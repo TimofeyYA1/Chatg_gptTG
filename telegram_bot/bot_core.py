@@ -1030,9 +1030,15 @@ async def on_image_generate_prompt(m: Message, state: FSMContext):
 
     if data.get("stub"):
         await m.answer(
-            data.get("caption") or "🧪 (симуляция) Картинка сгенерирована."
+            "⚠️ Провайдер не смог выдать изображение по этому запросу — "
+            "либо запрос временно отклонён их модерацией, либо сервис перегружен.\n"
+            "Попробуй немного переформулировать текст более нейтрально или убрать спорные детали "
+            "и отправь запрос ещё раз.\n\n"
+            f"📝 Текущий промпт:\n{user_prompt}"
         )
         return
+
+
 
     b64_out = data.get("b64")
     if not b64_out:
@@ -1058,7 +1064,6 @@ async def on_image_generate_prompt(m: Message, state: FSMContext):
     await m.answer_document(document=file_doc)
 
 # -------------------- Photo -> API (image edit) --------------------
-
 @router.edited_message(F.photo)
 async def process_photo_edit(msg: Message, state: FSMContext):
     await state.clear()
@@ -1146,8 +1151,9 @@ async def process_photo_edit(msg: Message, state: FSMContext):
 
     if data.get("stub"):
         await msg.answer(
-            "🧪 (симуляция) Изображение обработано.\n\n"
-            f"📝 Промпт:\n{user_prompt}"
+            "⚠️ Провайдер отклонил этот запрос — похоже, часть промпта не проходит их модерацию.\n"
+            "Попробуй переформулировать запрос более нейтрально или убрать чувствительные детали.\n\n"
+            f"📝 Текущий промпт:\n{user_prompt}"
         )
         return
 
@@ -1171,7 +1177,6 @@ async def process_photo_edit(msg: Message, state: FSMContext):
     # --- 2) Отдельный файл для скачивания ---
     file_doc = BufferedInputFile(out_bytes, filename="edited.png")
     await msg.answer_document(document=file_doc)
-
 
 @router.message(F.photo)
 async def process_photo_edit(msg: Message, state: FSMContext):
@@ -1260,8 +1265,9 @@ async def process_photo_edit(msg: Message, state: FSMContext):
 
     if data.get("stub"):
         await msg.answer(
-            "🧪 (симуляция) Изображение обработано.\n\n"
-            f"📝 Промпт:\n{user_prompt}"
+            "⚠️ Провайдер отклонил этот запрос — кажется, формулировка промпта не проходит их модерацию.\n"
+            "Попробуй упростить или перефразировать запрос, убрав потенциально запрещённые формулировки.\n\n"
+            f"📝 Текущий промпт:\n{user_prompt}"
         )
         return
 
