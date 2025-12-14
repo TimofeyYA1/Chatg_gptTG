@@ -1,27 +1,44 @@
 from __future__ import annotations
-from datetime import datetime, timezone
+
+from datetime import datetime, timezone, timedelta
 
 from dateutil.relativedelta import relativedelta
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from common.config import settings
 from db_adapter.database import get_db
 from db_adapter.models import User, Subscription, PremiumCredits, Referral
-from sqlalchemy import select
-from common.config import settings
-from pydantic import BaseModel
 
 
 BONUS_DEFAULT_SUBSCRIPTION_CENTS = getattr(settings, "REFERRAL_SUBSCRIPTION_BONUS_CENTS", 100_00)
 
-router = APIRouter( tags=["subscriptions"])
+router = APIRouter(tags=["subscriptions"])
+
 
 PLANS = {
-    "Light": {"price_cents": 275_00, "limits": {"messages": 50 * 30,  "images": 500,  "video": 0}},
-    "Max":   {"price_cents": 450_00, "limits": {"messages": 100 * 30, "images": 1000, "video": 10}},
-    "Ultra": {"price_cents": 1333_00,"limits": {"messages": 500 * 30, "images": 2500, "video": 100}},
+    # как в MyLook: цена в ⭐ (balance_cents), рубли просто для UI
+    "Week":  {"price_cents": 300_00,  "rub_price": 399,  "limits": {"messages": 0, "images": 150,  "video": 0}, "duration": {"days": 7}},
+    "Month": {"price_cents": 900_00,  "rub_price": 1199, "limits": {"messages": 0, "images": 600,  "video": 0}, "duration": {"months": 1}},
+    "Year":  {"price_cents": 4500_00, "rub_price": 5999, "limits": {"messages": 0, "images": 7200, "video": 0}, "duration": {"years": 1}},
 }
+
+PLAN_ALIASES = {
+    "Light": "Week",
+    "Max": "Month",
+    "Ultra": "Year",
+    "week": "Week",
+    "month": "Month",
+    "year": "Year",
+}
+
+def _norm_plan(p: str) -> str:
+    p = (p or "").strip()
+    return PLAN_ALIASES.get(p, p)
+
+
 FREE_LIMITS = {"messages": 1, "images": 1, "video": 0}
 
 
@@ -41,15 +58,11 @@ def _get_or_create_user(db: Session, chat_id: int) -> User:
 
 
 def _get_sub(db: Session, user_id: int) -> Subscription | None:
-    return db.execute(
-        select(Subscription).where(Subscription.user_id == user_id)
-    ).scalar_one_or_none()
+    return db.execute(select(Subscription).where(Subscription.user_id == user_id)).scalar_one_or_none()
 
 
 def _get_or_create_credits(db: Session, user_id: int) -> PremiumCredits:
-    p = db.execute(
-        select(PremiumCredits).where(PremiumCredits.user_id == user_id)
-    ).scalar_one_or_none()
+    p = db.execute(select(PremiumCredits).where(PremiumCredits.user_id == user_id)).scalar_one_or_none()
     if p:
         return p
     p = PremiumCredits(user_id=user_id)
@@ -59,22 +72,17 @@ def _get_or_create_credits(db: Session, user_id: int) -> PremiumCredits:
     return p
 
 
-def _apply_referral_subscription_bonus(
-    db: Session,
-    user: User,
-) -> dict:
+def _apply_referral_subscription_bonus(db: Session, user: User) -> dict:
     """
     Если user пришёл по рефке и по нему ещё не выдавали
     бонус за платную подписку — начисляем +100⭐ обоим.
 
     Возвращаем словарь, чтобы бот мог отправить пуши.
     """
-
     bonus_cents = BONUS_DEFAULT_SUBSCRIPTION_CENTS
     if bonus_cents <= 0:
         return {"applied": False}
 
-    # Ищем реферальную запись, где этот юзер был приглашённым
     ref = db.execute(
         select(Referral).where(
             Referral.invited_user_id == user.id,
@@ -89,7 +97,6 @@ def _apply_referral_subscription_bonus(
     if not referrer:
         return {"applied": False}
 
-    # Начисляем бонус обоим
     referrer.balance_cents = (referrer.balance_cents or 0) + bonus_cents
     user.balance_cents = (user.balance_cents or 0) + bonus_cents
 
@@ -107,10 +114,13 @@ def _apply_referral_subscription_bonus(
         "invited_chat_id": user.chat_id,
     }
 
+
 class SetPlanIn(BaseModel):
     chat_id: int
     plan: str
-    price_cents: int
+    # теперь можно не передавать цену — API сама подставит корректную
+    price_cents: int | None = None
+
 
 @router.get("/summary/{chat_id}")
 def summary(chat_id: int, db: Session = Depends(get_db)):
@@ -119,7 +129,7 @@ def summary(chat_id: int, db: Session = Depends(get_db)):
       - role
       - balance_cents
       - active_until, auto_renew
-      - limits: базовые лимиты (из PremiumCredits, а не из PLANS напрямую)
+      - limits: базовые лимиты (из PremiumCredits)
       - usage: фактическое использование
       - addons: докупленные
       - totals: base + addons
@@ -130,7 +140,6 @@ def summary(chat_id: int, db: Session = Depends(get_db)):
 
     # ленивое истечение подписки
     if sub and sub.current_period_end and _now() >= sub.current_period_end:
-        # при окончании плана обнуляем базовые лимиты
         credits.msg_limit_base = 0
         credits.img_limit_base = 0
         credits.video_limit_base = 0
@@ -182,52 +191,51 @@ def summary(chat_id: int, db: Session = Depends(get_db)):
         "addons": addons,
         "totals": totals,
     }
+
+
 @router.post("/set_plan")
 def set_plan(payload: SetPlanIn, db: Session = Depends(get_db)):
     """
-    Покупка/продление на месяц:
+    Покупка/продление:
       - списываем звёзды
-      - продлеваем current_period_end
+      - продлеваем current_period_end на duration плана (Week/Month/Year)
       - обновляем базовые лимиты в PremiumCredits под план
-      - usage НЕ обнуляем руками здесь (можно добавить при желании)
     """
-    # 1. Достаём поля из Pydantic-модели
     chat_id = payload.chat_id
-    plan = payload.plan
+    plan = _norm_plan(payload.plan)
     price_cents = payload.price_cents
 
-    # 2. Валидируем план и цену
     if plan not in PLANS:
         raise HTTPException(status_code=400, detail="unknown plan")
 
     expected_price = PLANS[plan]["price_cents"]
-    if price_cents != expected_price:
+    if price_cents is not None and price_cents != expected_price:
         raise HTTPException(status_code=400, detail="price mismatch")
+    price_cents = expected_price
 
-    # 3. Ищем/создаём пользователя
-    user = db.execute(
-        select(User).where(User.chat_id == chat_id)
-    ).scalar_one_or_none()
-    if not user:
-        user = User(chat_id=chat_id)
-        db.add(user)
-        db.commit()
-        db.refresh(user)
+    # создаём/берём пользователя единообразно
+    user = _get_or_create_user(db, chat_id)
 
-    # 4. Проверяем баланс
     current_balance = user.balance_cents or 0
     if current_balance < price_cents:
         raise HTTPException(status_code=402, detail="insufficient funds")
-
     user.balance_cents = current_balance - price_cents
 
-    # 5. Работа с подпиской
     sub = _get_sub(db, user.id)
     start_from = _now()
     if sub and sub.current_period_end and sub.current_period_end > start_from:
         start_from = sub.current_period_end
 
-    end = start_from + relativedelta(months=1)
+    # duration: days / months / years
+    dur = PLANS[plan]["duration"]
+    if "days" in dur:
+        end = start_from + timedelta(days=int(dur["days"]))
+    elif "months" in dur:
+        end = start_from + relativedelta(months=int(dur["months"]))
+    elif "years" in dur:
+        end = start_from + relativedelta(years=int(dur["years"]))
+    else:
+        end = start_from + relativedelta(months=1)
 
     if not sub:
         sub = Subscription(
@@ -244,10 +252,8 @@ def set_plan(payload: SetPlanIn, db: Session = Depends(get_db)):
         sub.current_period_end = end
         sub.cancel_at_period_end = False
 
-    # 6. Обновляем лимиты по плану
     credits = _get_or_create_credits(db, user.id)
     plan_limits = PLANS[plan]["limits"]
-
     credits.msg_limit_base = plan_limits["messages"]
     credits.img_limit_base = plan_limits["images"]
     credits.video_limit_base = plan_limits["video"]
@@ -257,12 +263,12 @@ def set_plan(payload: SetPlanIn, db: Session = Depends(get_db)):
     db.refresh(sub)
     db.refresh(credits)
 
-    # 7. Применяем реферальный бонус за платную подписку
     referral_bonus = _apply_referral_subscription_bonus(db, user)
 
     return {
         "ok": True,
         "plan": plan,
+        "active_until": sub.current_period_end.isoformat() if sub.current_period_end else None,
         "referral_bonus": referral_bonus,
     }
 
