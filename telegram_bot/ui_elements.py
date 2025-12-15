@@ -416,22 +416,35 @@ def kb_sub_card(lang: str = "ru") -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="⬅️ Назад", callback_data=CB_SUB_BACK)],
     ])
 
-def kb_sub_plans(lang: str = "ru") -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💠 Light", callback_data=f"{CB_SUB_BUY_PREFIX}:Light:{PRICE_LIGHT}")],
-        [InlineKeyboardButton(text="💠 Max", callback_data=f"{CB_SUB_BUY_PREFIX}:Max:{PRICE_MAX}")],
-        [InlineKeyboardButton(text="⚡ Ultra", callback_data=f"{CB_SUB_BUY_PREFIX}:Ultra:{PRICE_ULTRA}")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data=CB_SUB_OPEN)],
-    ])
+def kb_premium_paywall(lang: str = "ru") -> InlineKeyboardMarkup:
+    if lang == "en":
+        w, m, y, c = "⭐ Buy week", "✨ Buy month", "👑 Buy year", "Continue with limits"
+    else:
+        w, m, y, c = "⭐ Купить на неделю", "✨ Купить на месяц", "👑 Купить на год", "Продолжить с ограничениями"
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=f"{w} — 399₽ / 300⭐", callback_data=CB_PAY_WEEK)],
+            [InlineKeyboardButton(text=f"{m} — 1199₽ / 900⭐", callback_data=CB_PAY_MONTH)],
+            [InlineKeyboardButton(text=f"{y} — 5999₽ / 4500⭐", callback_data=CB_PAY_YEAR)],
+        ]
+    )
 
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 CB_PREMIUM_BUY = "premium:buy"  # premium:buy:<period>
 
-def kb_premium_paywall(lang: str = "ru"):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⭐ Купить на неделю — 399₽ / 300⭐", callback_data=f"{CB_PREMIUM_BUY}:week")],
-        [InlineKeyboardButton(text="✨ Купить на месяц — 1199₽ / 900⭐", callback_data=f"{CB_PREMIUM_BUY}:month")],
-        [InlineKeyboardButton(text="🤩 Купить на год — 5999₽ / 4500⭐", callback_data=f"{CB_PREMIUM_BUY}:year")],
-    ])
+def kb_premium_active(lang: str) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(row_width=1)
+
+    # кнопки для продления/прокачки
+    kb.add(
+        InlineKeyboardButton("⭐ Продлить на неделю", callback_data="premium:buy:week"),
+        InlineKeyboardButton("✨ Продлить на месяц", callback_data="premium:buy:month"),
+        InlineKeyboardButton("🔥 Продлить на год", callback_data="premium:buy:year")
+    )
+
+    kb.add(InlineKeyboardButton("❌ Отмена", callback_data="premium:cancel"))
+
+    return kb

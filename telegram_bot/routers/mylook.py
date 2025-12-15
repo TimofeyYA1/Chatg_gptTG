@@ -68,6 +68,43 @@ def _find(base_no_ext: str) -> Optional[str]:
             return p
     return None
 
+from datetime import datetime
+
+BUY_LOCK: set[int] = set()
+
+PLAN_RU = {
+    "Week": "Неделя",
+    "Month": "Месяц",
+    "Year": "Год",
+    "free": "Free",
+}
+
+def _format_ru_date(iso: str | None) -> str:
+    if not iso:
+        return "—"
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        return dt.strftime("%d.%m.%Y")
+    except Exception:
+        return iso.split("T")[0]
+
+
+def _premium_active_caption(summary: dict) -> str:
+    role = (summary.get("role") or "free")
+    role_ru = PLAN_RU.get(role, role)
+    active_until = _format_ru_date(summary.get("active_until"))
+    auto_renew = "да" if summary.get("auto_renew") else "нет"
+
+    return (
+        "⭐ <b>Подписка активна</b>\n\n"
+        f"План: <b>{role_ru}</b>\n"
+        f"Действует до: <b>{active_until}</b>\n"
+        f"Автопродление: <b>{auto_renew}</b>\n\n"
+        "Хотите продлить или прокачать?\n"
+        "Выберите вариант:"
+    )
+
+
 def img_ui(name: str) -> str:
     p = _find(_assets("ui", name))
     if p:
@@ -301,52 +338,107 @@ MENU_CAPTION_RU = (
 # -------------------- handlers --------------------
 @router.message(Command("premium"))
 async def premium_cmd(message: Message, state: FSMContext) -> None:
-    text = (
-        "🚀 <b>Разблокируйте все возможности прямо сейчас!</b>\n\n"
-        "🎨 Более 100 шаблонов из каталога\n"
-        "🧑‍🎤 Новые стили каждую неделю\n"
-        "🖼 Скачивание в HD качестве\n\n"
-        "⏱ Скидка действует 10 минут."
-    )
-    await message.answer_photo(
-        FSInputFile(img_ui("premium")),
-        caption=text,
-        reply_markup=ui.kb_premium_paywall("ru"),
-    )
+    # гарантируем что юзер есть
+    try:
+        await api_client.ensure_user(message.chat.id)
+    except Exception:
+        pass
 
-@router.callback_query(F.data.startswith(ui.CB_PREMIUM_BUY))
-async def premium_buy(call: CallbackQuery, state: FSMContext) -> None:
-    # premium:buy:week/month/year
-    period = call.data.split(":")[-1]
+    try:
+        s = await api_client.get_sub_summary(message.chat.id)
+    except Exception:
+        s = {}
 
-    # маппинг периодов на планы твоей API
-    plan_by_period = {
-        "week": "Light",
-        "month": "Max",
-        "year": "Ultra",
-    }
-    plan = plan_by_period.get(period)
-    if not plan:
-        await call.answer("bad plan", show_alert=True)
-        return
+    role = (s.get("role") or "free")
+    active_until = _format_ru_date(s.get("active_until"))
+    auto_renew = "да" if s.get("auto_renew") else "нет"
 
-    res = await api_client.set_plan(call.from_user.id, plan=plan)
-    if res.get("error"):
-        await call.answer(
-            f"API ошибка ({res.get('step')}): {res.get('detail')}",
-            show_alert=True
+    if role == "free":
+        caption = (
+            "🚀 <b>Разблокируйте все возможности прямо сейчас!</b>\n\n"
+            "🎨 Более 100 шаблонов из каталога\n"
+            "🧑‍🎤 Новые стили каждую неделю\n"
+            "🖼 Скачивание в HD качестве\n\n"
+            "⏱ Скидка действует 10 минут."
+        )
+        await message.answer_photo(
+            FSInputFile(img_ui("premium")),
+            caption=caption,
+            reply_markup=ui.kb_premium_paywall("ru"),
         )
         return
 
+    # если уже премиум
+    caption = (
+        "⭐ <b>Подписка активна</b>\n\n"
+        f"План: <b>{role}</b>\n"
+        f"Действует до: <b>{active_until}</b>\n"
+        f"Автопродление: <b>{auto_renew}</b>\n\n"
+        "Хотите продлить или прокачать? Выберите вариант:"
+    )
+    # пока: просто покажем те же кнопки — это и продление, и апгрейд
+    await message.answer_photo(
+    FSInputFile(img_ui("premium")),
+    caption=caption,
+    reply_markup=ui.kb_premium_paywall("ru"),
+)
 
-    await call.answer(f"Подписка активирована: {plan} ✅", show_alert=True)
 
-    # после покупки сразу пускаем в меню, если пользователь уже в потоке (есть panel_id)
-    data = await state.get_data()
-    if data.get("panel_id") and data.get("styles_gender"):
-        await state.set_state(Flow.main_menu)
-        await _show_main_menu(call, state)
+from aiogram.types import InputMediaPhoto, FSInputFile
 
+@router.callback_query(F.data.startswith("premium:buy:"))
+async def premium_buy(call: CallbackQuery, state: FSMContext) -> None:
+    uid = call.from_user.id
+
+    # period = week/month/year
+    period = call.data.split(":")[-1]
+
+    # 0) анти-даблклик (пока API не ответил)
+    if uid in BUY_LOCK:
+        await call.answer("⏳ Уже покупаю, секунду…", show_alert=True)
+        return
+    BUY_LOCK.add(uid)
+
+    try:
+        # 1) если подписка уже есть — просто переключаем окно в “активна” и выходим
+        summary = await api_client.get_sub_summary(uid)
+        if (summary.get("role") or "free").lower() != "free":
+            media = InputMediaPhoto(
+                media=FSInputFile(img_ui("premium")),
+                caption=_premium_active_caption(summary),
+            )
+            await call.message.edit_media(media=media, reply_markup=ui.kb_premium_active("ru"))
+            await call.answer("Подписка уже активна ✅")
+            return
+
+        # 2) чтобы нельзя было тыкнуть второй раз по старым кнопкам — убираем клаву на время покупки
+        await call.message.edit_reply_markup(reply_markup=None)
+
+        # 3) покупка (у тебя теперь set_plan поддерживает period=...)
+        res = await api_client.set_plan(uid, period=period)
+
+        if res.get("error"):
+            # вернуть paywall назад (кнопки + исходная картинка/описание)
+            media = InputMediaPhoto(
+                media=FSInputFile(img_ui("premium_paywall")),  # если у тебя paywall картинка так называется
+                caption=ui.PREMIUM_PAYWALL_CAPTION_RU,         # или твоя строка caption
+            )
+            await call.message.edit_media(media=media, reply_markup=ui.kb_premium_paywall("ru"))
+            await call.answer(f"Не получилось: {res.get('detail')}", show_alert=True)
+            return
+
+        # 4) успех: сразу перерисовываем текущее окно в “подписка активна”
+        summary = await api_client.get_sub_summary(uid)
+
+        media = InputMediaPhoto(
+            media=FSInputFile(img_ui("premium")),
+            caption=_premium_active_caption(summary),
+        )
+        await call.message.edit_media(media=media, reply_markup=ui.kb_premium_active("ru"))
+        await call.answer("Подписка активирована ✅", show_alert=True)
+
+    finally:
+        BUY_LOCK.discard(uid)
 
 
 @router.message(Command("account"))
@@ -747,7 +839,7 @@ def _fmt_sub_text(s: dict) -> str:
         return "⭐ Подписка\n\nAPI недоступен или нет данных."
 
     role = s.get("role") or "free"
-    active_until = s.get("active_until") or "—"
+    active_until = _format_ru_date(s.get("active_until"))
     auto_renew = s.get("auto_renew")
     limits = s.get("limits") or {}
     usage = s.get("usage") or {}

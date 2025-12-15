@@ -35,10 +35,9 @@ def cache_invalidate(chat_id: int) -> None:
             _CACHE.pop(k, None)
 
 
+# -------------------- API wrappers --------------------
+
 async def ensure_user(chat_id: int) -> Dict[str, Any]:
-    """
-    Гарантированно создаёт пользователя в БД (потому что /account/profile делает get_or_create).
-    """
     async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
         r = await client.get(f"{API_BASE}/account/profile/{chat_id}")
     if r.status_code != 200:
@@ -77,40 +76,109 @@ async def is_premium(chat_id: int) -> bool:
     return role != "free"
 
 
-async def balance_topup(chat_id: int, amount_cents: int) -> bool:
+async def balance_topup(chat_id: int, amount_cents: int) -> Dict[str, Any]:
     async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
         r = await client.post(
             f"{API_BASE}/payments/balance/topup",
             json={"chat_id": chat_id, "amount": int(amount_cents)},
         )
     cache_invalidate(chat_id)
-    return r.status_code == 200
 
-async def set_plan(chat_id: int, plan: str) -> dict:
-    if plan not in PLANS:
-        return {"error": True, "detail": "unknown plan in bot"}
+    if r.status_code != 200:
+        return {"error": True, "status": r.status_code, "detail": r.text}
 
-    price = PLANS[plan]
+    try:
+        return r.json()
+    except Exception:
+        return {"ok": True}
 
-    # 1) topup
-    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-        r1 = await client.post(f"{API_BASE}/payments/balance/topup", json={"chat_id": chat_id, "amount": int(price)})
-    if r1.status_code != 200:
-        return {"error": True, "step": "topup", "status": r1.status_code, "detail": r1.text}
 
-    # 2) set_plan
-    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+# Paywall “как у них”
+PAYWALL = {
+    "week":  {"plan": "Week",  "stars": 300_00},
+    "month": {"plan": "Month", "stars": 900_00},
+    "year":  {"plan": "Year",  "stars": 4500_00},
+}
+
+# алиасы на всякий (для обратной совместимости)
+_PLAN_ALIASES = {
+    "Light": "Week",
+    "Max": "Month",
+    "Ultra": "Year",
+    "week": "Week",
+    "month": "Month",
+    "year": "Year",
+    "Week": "Week",
+    "Month": "Month",
+    "Year": "Year",
+}
+
+
+def _norm_plan(p: str) -> str:
+    p = (p or "").strip()
+    return _PLAN_ALIASES.get(p, p)
+
+
+async def set_plan(chat_id: int, plan: str | None = None, period: str | None = None) -> Dict[str, Any]:
+    """
+    Совместимый метод (чтобы не ловить неожиданные keyword args):
+
+      - set_plan(chat_id, period="week|month|year")
+      - set_plan(chat_id, plan="Week|Month|Year")
+      - set_plan(chat_id, plan="Light|Max|Ultra")  (алиасы)
+
+    Реальная покупка без денег:
+      1) докидываем ⭐ (topup)
+      2) вызываем /subscriptions/set_plan
+
+    ВАЖНО: price_cents НЕ передаём (API сама проверит цену).
+    """
+    # 1) определяем plan_name и stars
+    if period:
+        if period not in PAYWALL:
+            return {"error": True, "detail": "unknown period"}
+        plan_name = PAYWALL[period]["plan"]
+        stars = PAYWALL[period]["stars"]
+    else:
+        plan_name = _norm_plan(plan or "")
+        inv = {v["plan"]: v["stars"] for v in PAYWALL.values()}
+        if plan_name not in inv:
+            return {"error": True, "detail": "unknown plan"}
+        stars = inv[plan_name]
+
+    # 2) topup
+    topup_res = await balance_topup(chat_id, stars)
+    if topup_res.get("error"):
+        return {"error": True, "step": "topup", **topup_res}
+
+    # 3) set_plan
+    async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
         r2 = await client.post(
             f"{API_BASE}/subscriptions/set_plan",
-            json={"chat_id": chat_id, "plan": plan, "price_cents": int(price)},
+            json={"chat_id": chat_id, "plan": plan_name},
         )
+
+    cache_invalidate(chat_id)
+
     if r2.status_code != 200:
         return {"error": True, "step": "set_plan", "status": r2.status_code, "detail": r2.text}
 
-    return r2.json()
+    try:
+        return r2.json()
+    except Exception:
+        return {"ok": True, "plan": plan_name}
 
-async def cancel_plan(chat_id: int) -> bool:
+
+async def cancel_plan(chat_id: int) -> Dict[str, Any]:
     async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
         r = await client.post(f"{API_BASE}/subscriptions/cancel", json={"chat_id": chat_id})
+
     cache_invalidate(chat_id)
-    return r.status_code == 200
+
+    if r.status_code != 200:
+        return {"error": True, "status": r.status_code, "detail": r.text}
+
+    try:
+        return r.json()
+    except Exception:
+        return {"ok": True}
