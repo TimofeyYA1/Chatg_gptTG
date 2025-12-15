@@ -7,7 +7,8 @@ from typing import Any, Dict, Optional, Tuple
 import httpx
 
 API_BASE = os.getenv("API_BASE", "http://api:8000").rstrip("/")
-API_TIMEOUT = httpx.Timeout(connect=5.0, read=25.0, write=10.0, pool=5.0)
+# Увеличим тайм-аут для генерации, так как картинки делаются долго (до 60 сек)
+API_TIMEOUT = httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=5.0)
 
 # простой кэш, чтобы не долбить API на каждый клик
 _CACHE: Dict[Tuple[int, str], Tuple[float, Any]] = {}
@@ -55,10 +56,6 @@ async def get_profile(chat_id: int) -> Dict[str, Any]:
 
 
 async def get_sub_summary(chat_id: int) -> Dict[str, Any]:
-    cached = _cache_get(chat_id, "sub_summary")
-    if cached is not None:
-        return cached
-
     async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
         r = await client.get(f"{API_BASE}/subscriptions/summary/{chat_id}")
 
@@ -66,7 +63,6 @@ async def get_sub_summary(chat_id: int) -> Dict[str, Any]:
         return {}
 
     data = r.json()
-    _cache_set(chat_id, "sub_summary", data)
     return data
 
 
@@ -93,14 +89,13 @@ async def balance_topup(chat_id: int, amount_cents: int) -> Dict[str, Any]:
         return {"ok": True}
 
 
-# Paywall “как у них”
+# Paywall settings
 PAYWALL = {
     "week":  {"plan": "Week",  "stars": 300_00},
     "month": {"plan": "Month", "stars": 900_00},
     "year":  {"plan": "Year",  "stars": 4500_00},
 }
 
-# алиасы на всякий (для обратной совместимости)
 _PLAN_ALIASES = {
     "Light": "Week",
     "Max": "Month",
@@ -120,25 +115,12 @@ def _norm_plan(p: str) -> str:
 
 
 async def set_plan(chat_id: int, plan: str | None = None, period: str | None = None) -> Dict[str, Any]:
-    """
-    Совместимый метод (чтобы не ловить неожиданные keyword args):
-
-      - set_plan(chat_id, period="week|month|year")
-      - set_plan(chat_id, plan="Week|Month|Year")
-      - set_plan(chat_id, plan="Light|Max|Ultra")  (алиасы)
-
-    Реальная покупка без денег:
-      1) докидываем ⭐ (topup)
-      2) вызываем /subscriptions/set_plan
-
-    ВАЖНО: price_cents НЕ передаём (API сама проверит цену).
-    """
-    # 1) определяем plan_name и stars
     if period:
-        if period not in PAYWALL:
+        period_key = period.lower()
+        if period_key not in PAYWALL:
             return {"error": True, "detail": "unknown period"}
-        plan_name = PAYWALL[period]["plan"]
-        stars = PAYWALL[period]["stars"]
+        plan_name = PAYWALL[period_key]["plan"]
+        stars = PAYWALL[period_key]["stars"]
     else:
         plan_name = _norm_plan(plan or "")
         inv = {v["plan"]: v["stars"] for v in PAYWALL.values()}
@@ -146,12 +128,10 @@ async def set_plan(chat_id: int, plan: str | None = None, period: str | None = N
             return {"error": True, "detail": "unknown plan"}
         stars = inv[plan_name]
 
-    # 2) topup
     topup_res = await balance_topup(chat_id, stars)
     if topup_res.get("error"):
         return {"error": True, "step": "topup", **topup_res}
 
-    # 3) set_plan
     async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
         r2 = await client.post(
             f"{API_BASE}/subscriptions/set_plan",
@@ -182,3 +162,31 @@ async def cancel_plan(chat_id: int) -> Dict[str, Any]:
         return r.json()
     except Exception:
         return {"ok": True}
+
+
+# --- NEW: Image Generation/Editing ---
+
+async def edit_image(chat_id: int, prompt: str, image_b64: str) -> Dict[str, Any]:
+    """
+    Отправляет запрос на редактирование/генерацию по фото.
+    """
+    payload = {
+        "chat_id": chat_id,
+        "prompt": prompt,
+        "image_b64": image_b64,
+        "size": "768x768" # Можно вынести в настройки
+    }
+    
+    # Таймаут здесь нужен побольше, так как генерация тяжелая
+    timeout = httpx.Timeout(connect=5.0, read=90.0, write=10.0, pool=5.0)
+    
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.post(f"{API_BASE}/image/edit", json=payload)
+        
+    if r.status_code != 200:
+        return {"ok": False, "error": r.text, "status": r.status_code}
+        
+    try:
+        return r.json()
+    except:
+        return {"ok": False, "error": "invalid_json"}

@@ -31,6 +31,9 @@ services:
       interval: 10s
       timeout: 3s
       retries: 30
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
 
   bot:
     build: .
@@ -42,6 +45,9 @@ services:
     entrypoint: ["/bin/bash", "docker/entrypoint_bot.sh"]
     volumes:
       - ./fonts/ARIALBD.TTF:/app/fonts/ARIALBD.TTF:ro
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
 
 volumes:
   db_data:
