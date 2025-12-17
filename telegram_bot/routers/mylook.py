@@ -49,10 +49,23 @@ def _premium_active_caption(summary: dict) -> str:
     role = (summary.get("role") or "free")
     role_ru = PLAN_RU.get(role, role)
     active_until = _format_ru_date(summary.get("active_until"))
+    
+    usage = summary.get("usage", {})
+    limits = summary.get("limits", {})
+    
+    used = usage.get("images", 0)
+    total = limits.get("images", 0)
+    
+    if total > 0:
+        progress_text = f"Использовано генераций: <b>{used} из {total}</b>"
+    else:
+        progress_text = "Генерации недоступны"
+
     return (
         "⭐ <b>Подписка активна!</b>\n\n"
         f"Ваш план: <b>{role_ru}</b>\n"
         f"Действует до: <b>{active_until}</b>\n\n"
+        f"{progress_text}\n\n"
         "✅ Вам доступны все функции бота.\n"
         "Вы можете докупить время (срок суммируется):"
     )
@@ -109,8 +122,6 @@ class Flow(StatesGroup):
     editor_home = State()
     picker = State()
     shoots_home = State()
-    
-    # Состояние ожидания промпта
     waiting_custom_prompt = State()
 
 # -------------------- Handlers: Start & Auth --------------------
@@ -155,7 +166,7 @@ async def restart_callback(call: CallbackQuery, state: FSMContext) -> None:
             
     await call.answer()
 
-# -------------------- Photo Upload (JPG & FILE) --------------------
+# -------------------- Photo Upload --------------------
 
 @router.message(Flow.waiting_photo, F.photo)
 async def got_photo(message: Message, state: FSMContext) -> None:
@@ -181,7 +192,7 @@ async def _after_photo_received(message: Message, state: FSMContext):
         kb=ui.kb_gender_or_prompt("ru"),
     )
 
-# -------------------- Gender & Menu --------------------
+# -------------------- Gender Selection (The Hub) --------------------
 
 @router.message(Command("premium"))
 async def premium_cmd(message: Message, state: FSMContext) -> None:
@@ -219,6 +230,21 @@ async def choose_gender(call: CallbackQuery, state: FSMContext) -> None:
     await _show_main_menu(call, state)
     await call.answer()
 
+@router.callback_query(F.data == ui.CB_BACK_TO_GENDER)
+async def back_to_gender(call: CallbackQuery, state: FSMContext) -> None:
+    if not await is_premium_async(call.from_user.id):
+        await call.answer("Нужна подписка", show_alert=True)
+        return
+
+    await state.set_state(Flow.choosing_gender)
+    await panel_edit_media(
+        call, state,
+        img_path=img_ui("gender"),
+        caption="Выберите пол для корректного применения стилей:",
+        kb=ui.kb_gender_or_prompt("ru")
+    )
+    await call.answer()
+
 # -------------------- Custom Prompt Logic --------------------
 
 @router.callback_query(F.data == ui.CB_CUSTOM_PROMPT)
@@ -228,13 +254,18 @@ async def custom_prompt_click(call: CallbackQuery, state: FSMContext) -> None:
         return
     
     await state.set_state(Flow.waiting_custom_prompt)
-    await call.message.answer(
-        "✍️ <b>Напишите свой запрос.</b>\n\n"
-        "Например:\n"
-        "<i>— Сделай меня киборгом в стиле киберпанк</i>\n"
-        "<i>— Фото в костюме супергероя на крыше</i>\n"
-        "<i>— Нарисуй меня в стиле аниме 90-х</i>\n\n"
-        "Чем детальнее описание, тем лучше результат! 👇"
+    await panel_edit_media(
+        call, state,
+        img_path=img_ui("gender"), 
+        caption=(
+            "✍️ <b>Напишите свой запрос.</b>\n\n"
+            "Например:\n"
+            "<i>— Сделай меня киборгом в стиле киберпанк</i>\n"
+            "<i>— Фото в костюме супергероя на крыше</i>\n"
+            "<i>— Нарисуй меня в стиле аниме 90-х</i>\n\n"
+            "Чем детальнее описание, тем лучше результат! 👇"
+        ),
+        kb=ui.kb_back_to_gender("ru")
     )
     await call.answer()
 
@@ -271,6 +302,10 @@ async def handle_custom_prompt_text(message: Message, state: FSMContext) -> None
         except: pass
 
         if not res.get("ok"):
+            if res.get("error") == "limit_exceeded":
+                await message.answer("🚫 <b>Лимит генераций исчерпан!</b>\n\nПожалуйста, продлите подписку или дождитесь нового периода.")
+                return
+            
             error_text = res.get("error", "Unknown error")
             await message.answer(f"❌ Ошибка генерации: {error_text}")
             return
@@ -285,15 +320,12 @@ async def handle_custom_prompt_text(message: Message, state: FSMContext) -> None
         
         caption = res.get("caption", "✨ Готово!")
         
-        # Отправляем результат с кнопками действий
         await message.answer_photo(
             result_file, 
             caption=caption, 
             reply_markup=ui.kb_result_actions("ru")
         )
         
-        # ИСПРАВЛЕНО: Сохраняем не ID, а САМ БАЙТ-КОД (строку b64)
-        # Это позволяет отправлять его потом как Document без ошибок
         await state.update_data(last_result_b64=result_b64)
 
     except Exception as e:
@@ -307,9 +339,7 @@ async def handle_custom_prompt_text(message: Message, state: FSMContext) -> None
 
 @router.callback_query(F.data == ui.CB_SAVE_FILE)
 async def on_save_file(call: CallbackQuery, state: FSMContext):
-    """Отправка результата как документа"""
     data = await state.get_data()
-    # Берем base64 из памяти
     b64_data = data.get("last_result_b64")
     
     if not b64_data:
@@ -317,9 +347,7 @@ async def on_save_file(call: CallbackQuery, state: FSMContext):
         return
         
     await call.answer("Отправляю файл...")
-    
     try:
-        # Декодируем и отправляем как документ
         file_bytes = base64.b64decode(b64_data)
         doc_file = BufferedInputFile(file_bytes, filename="mylook_result.jpg")
         await call.message.answer_document(doc_file, caption="Вот ваш файл 💾")
@@ -330,10 +358,6 @@ async def on_save_file(call: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == ui.CB_GEN_NEW)
 async def on_gen_new(call: CallbackQuery, state: FSMContext):
-    """
-    Кнопка 'Генерировать дальше' (фактически рестарт)
-    """
-    # Сбрасываем лишнее, но можно оставить например ID пользователя
     await restart_callback(call, state)
 
 
@@ -353,7 +377,11 @@ async def premium_buy(call: CallbackQuery, state: FSMContext) -> None:
         res = await api_client.set_plan(uid, period=period)
         if res.get("error"):
             BUY_LOCK.discard(uid)
-            await call.answer(f"Ошибка: {res.get('detail')}", show_alert=True)
+            # Если вернулась ошибка "subscription_already_active", говорим об этом юзеру
+            if res.get("detail") == "subscription_already_active":
+                await call.answer("У вас уже есть активная подписка!", show_alert=True)
+            else:
+                await call.answer(f"Ошибка: {res.get('detail')}", show_alert=True)
             return
 
         summary = await api_client.get_sub_summary(uid)
@@ -588,3 +616,96 @@ async def generate(call: CallbackQuery, state: FSMContext) -> None:
     await call.message.answer_photo(photo=file_id, caption="✨ Готово. Сделано с любовью.")
     await panel_edit_media(call, state, img_path=img_ui("menu"), caption="Меню", kb=ui.kb_main_menu("ru"))
     await call.answer()
+
+@router.callback_query(F.data == ui.CB_GENERATE)
+async def generate(call: CallbackQuery, state: FSMContext) -> None:
+    # 1. Проверка подписки
+    if not await is_premium_async(call.from_user.id):
+        await call.answer("Подписка истекла!", show_alert=True)
+        # Можно кинуть paywall в чат
+        return
+
+    # 2. Получаем данные
+    data = await state.get_data()
+    file_id = data.get("photo_file_id")
+    editor_sel = data.get("editor_sel", {})
+    shoot_sel = data.get("shoot_sel", {})
+    gender = data.get("styles_gender", "m")
+
+    # Проверка: выбрано ли хоть что-то?
+    if not file_id:
+        await call.answer("Нет фото. Начните заново /start", show_alert=True)
+        return
+    
+    # Если и редактор пуст, и фотосессии нет
+    if not editor_sel and not shoot_sel:
+        await call.answer("Выберите хотя бы один стиль!", show_alert=True)
+        return
+
+    # 3. Визуальная реакция
+    await call.answer()
+    wait_msg = await call.message.answer("⏳ <b>Генерирую... Это займет около минуты.</b>")
+
+    try:
+        # 4. Скачиваем фото и в base64
+        file = await call.bot.get_file(file_id)
+        file_io = io.BytesIO()
+        await call.bot.download_file(file.file_path, file_io)
+        
+        image_b64 = base64.b64encode(file_io.getvalue()).decode("utf-8")
+
+        # 5. Отправляем на API
+        res = await api_client.generate_from_catalog(
+            chat_id=call.from_user.id,
+            image_b64=image_b64,
+            gender=gender,
+            editor_sel=editor_sel,
+            shoot_sel=shoot_sel
+        )
+
+        # 6. Удаляем "Генерирую..."
+        try: await wait_msg.delete()
+        except: pass
+
+        # 7. Обработка ответа
+        if not res.get("ok"):
+            err = res.get("error", "Unknown")
+            if err == "limit_exceeded":
+                await call.message.answer("🚫 <b>Лимит генераций исчерпан.</b>\nПродлите подписку для новых попыток.")
+            elif err == "no_selection":
+                await call.message.answer("⚠️ Вы ничего не выбрали.")
+            else:
+                await call.message.answer(f"❌ Ошибка: {err}")
+            return
+
+        result_b64 = res.get("b64")
+        caption = res.get("caption", "Готово")
+
+        if result_b64:
+            # Декодируем и отправляем
+            result_bytes = base64.b64decode(result_b64)
+            result_file = BufferedInputFile(result_bytes, filename="result.jpg")
+            
+            # Отправляем фото с кнопками действий (Сохранить/Дальше)
+            await call.message.answer_photo(
+                result_file, 
+                caption=caption,
+                reply_markup=ui.kb_result_actions("ru")
+            )
+            
+            # Сохраняем результат для кнопки "Скачать файл"
+            await state.update_data(last_result_b64=result_b64)
+            
+            # Сбрасываем выбор редактора (по желанию), чтобы не мешал следующей генерации
+            # await state.update_data(editor_sel={}, shoot_sel={})
+            
+            # Возвращаем меню
+            await panel_send(call.message, state, img_ui("menu"), caption="Главное меню:", kb=ui.kb_main_menu("ru"))
+        else:
+            await call.message.answer("⚠️ Сервер вернул пустой результат (Stub mode?)")
+
+    except Exception as e:
+        print(f"Catalog Gen Error: {e}")
+        try: await wait_msg.delete() 
+        except: pass
+        await call.message.answer("❌ Произошла ошибка. Попробуйте позже.")

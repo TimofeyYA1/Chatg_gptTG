@@ -190,3 +190,35 @@ async def edit_image(chat_id: int, prompt: str, image_b64: str) -> Dict[str, Any
         return r.json()
     except:
         return {"ok": False, "error": "invalid_json"}
+
+async def generate_from_catalog(
+    chat_id: int, 
+    image_b64: str, 
+    gender: str, 
+    editor_sel: dict, 
+    shoot_sel: dict
+) -> Dict[str, Any]:
+    
+    payload = {
+        "chat_id": chat_id,
+        "image_b64": image_b64,
+        "gender": gender,
+        "editor_sel": editor_sel,
+        "shoot_sel": shoot_sel
+    }
+    
+    timeout = httpx.Timeout(connect=5.0, read=90.0, write=10.0, pool=5.0)
+    
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.post(f"{API_BASE}/image/generate_from_catalog", json=payload)
+        
+    if r.status_code != 200:
+        return {"ok": False, "error": f"HTTP {r.status_code}", "detail": r.text}
+        
+    try:
+        return r.json()
+    except:
+        return {"ok": False, "error": "invalid_json"}
+
+
+

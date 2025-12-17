@@ -21,5 +21,8 @@ PY
 echo "[api] Creating tables if not exist…"
 python -m db_adapter.create_tables || true
 
+echo "[api] Syncing catalog from JSON..."
+python sync_catalog.py
+
 echo "[api] Starting Uvicorn…"
 exec uvicorn api_server.main:app --host 0.0.0.0 --port 8000

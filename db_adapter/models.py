@@ -200,3 +200,60 @@ class Payment(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+# -------------------- CATALOG (EDITOR & SHOOTS) --------------------
+
+
+class CatalogCategory(Base):
+    __tablename__ = "catalog_categories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    slug: Mapped[str] = mapped_column(String(64), unique=True, index=True)  # 'moustache', 'winter'
+    type: Mapped[str] = mapped_column(String(32))  # 'editor' | 'shoot'
+    gender: Mapped[str] = mapped_column(String(16))  # 'm' | 'f' | 'all'
+    title_ru: Mapped[str] = mapped_column(String(128))
+
+    pages: Mapped[list["CatalogPage"]] = relationship(
+        "CatalogPage",
+        back_populates="category",
+        order_by="CatalogPage.page_number",
+        cascade="all, delete-orphan",
+    )
+
+
+class CatalogPage(Base):
+    __tablename__ = "catalog_pages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    category_id: Mapped[int] = mapped_column(
+        ForeignKey("catalog_categories.id", ondelete="CASCADE")
+    )
+    page_number: Mapped[int] = mapped_column(Integer)  # 1, 2, 3...
+    image_path: Mapped[str] = mapped_column(String(512))  # "assets/..."
+
+    category: Mapped["CatalogCategory"] = relationship(
+        "CatalogCategory", back_populates="pages"
+    )
+    items: Mapped[list["CatalogItem"]] = relationship(
+        "CatalogItem",
+        back_populates="page",
+        order_by="CatalogItem.slot_number",
+        cascade="all, delete-orphan",
+    )
+
+
+class CatalogItem(Base):
+    __tablename__ = "catalog_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    page_id: Mapped[int] = mapped_column(
+        ForeignKey("catalog_pages.id", ondelete="CASCADE")
+    )
+
+    slot_number: Mapped[int] = mapped_column(Integer)  # 1-9
+    prompt: Mapped[str] = mapped_column(Text)
+    title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    is_premium: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    page: Mapped["CatalogPage"] = relationship("CatalogPage", back_populates="items")

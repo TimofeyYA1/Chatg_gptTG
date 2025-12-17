@@ -19,7 +19,7 @@ router = APIRouter(tags=["subscriptions"])
 
 
 PLANS = {
-    # как в MyLook: цена в ⭐ (balance_cents), рубли просто для UI
+    # Лимиты: Неделя=150, Месяц=600, Год=7200
     "Week":  {"price_cents": 300_00,  "rub_price": 399,  "limits": {"messages": 0, "images": 150,  "video": 0}, "duration": {"days": 7}},
     "Month": {"price_cents": 900_00,  "rub_price": 1199, "limits": {"messages": 0, "images": 600,  "video": 0}, "duration": {"months": 1}},
     "Year":  {"price_cents": 4500_00, "rub_price": 5999, "limits": {"messages": 0, "images": 7200, "video": 0}, "duration": {"years": 1}},
@@ -32,14 +32,14 @@ PLAN_ALIASES = {
     "week": "Week",
     "month": "Month",
     "year": "Year",
+    "Week": "Week",
+    "Month": "Month",
+    "Year": "Year",
 }
 
 def _norm_plan(p: str) -> str:
     p = (p or "").strip()
     return PLAN_ALIASES.get(p, p)
-
-
-FREE_LIMITS = {"messages": 1, "images": 1, "video": 0}
 
 
 def _now() -> datetime:
@@ -73,12 +73,6 @@ def _get_or_create_credits(db: Session, user_id: int) -> PremiumCredits:
 
 
 def _apply_referral_subscription_bonus(db: Session, user: User) -> dict:
-    """
-    Если user пришёл по рефке и по нему ещё не выдавали
-    бонус за платную подписку — начисляем +100⭐ обоим.
-
-    Возвращаем словарь, чтобы бот мог отправить пуши.
-    """
     bonus_cents = BONUS_DEFAULT_SUBSCRIPTION_CENTS
     if bonus_cents <= 0:
         return {"applied": False}
@@ -118,32 +112,26 @@ def _apply_referral_subscription_bonus(db: Session, user: User) -> dict:
 class SetPlanIn(BaseModel):
     chat_id: int
     plan: str
-    # теперь можно не передавать цену — API сама подставит корректную
     price_cents: int | None = None
 
 
 @router.get("/summary/{chat_id}")
 def summary(chat_id: int, db: Session = Depends(get_db)):
     """
-    Возвращает:
-      - role
-      - balance_cents
-      - active_until, auto_renew
-      - limits: базовые лимиты (из PremiumCredits)
-      - usage: фактическое использование
-      - addons: докупленные
-      - totals: base + addons
+    Возвращает статистику для отображения в боте.
+    Здесь же происходит проверка истечения срока подписки.
     """
     user = _get_or_create_user(db, chat_id)
     sub = _get_sub(db, user.id)
     credits = _get_or_create_credits(db, user.id)
 
-    # ленивое истечение подписки
+    # Проверка истечения времени
     if sub and sub.current_period_end and _now() >= sub.current_period_end:
+        # Обнуляем лимиты, так как подписка сгорела
         credits.msg_limit_base = 0
         credits.img_limit_base = 0
         credits.video_limit_base = 0
-
+        # Удаляем подписку (переводим во free)
         db.delete(sub)
         db.commit()
         sub = None
@@ -195,12 +183,6 @@ def summary(chat_id: int, db: Session = Depends(get_db)):
 
 @router.post("/set_plan")
 def set_plan(payload: SetPlanIn, db: Session = Depends(get_db)):
-    """
-    Покупка/продление:
-      - списываем звёзды
-      - продлеваем current_period_end на duration плана (Week/Month/Year)
-      - обновляем базовые лимиты в PremiumCredits под план
-    """
     chat_id = payload.chat_id
     plan = _norm_plan(payload.plan)
     price_cents = payload.price_cents
@@ -213,20 +195,21 @@ def set_plan(payload: SetPlanIn, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="price mismatch")
     price_cents = expected_price
 
-    # создаём/берём пользователя единообразно
     user = _get_or_create_user(db, chat_id)
 
+    # ПРОВЕРКА: Если уже есть активная подписка — запрещаем покупку
+    sub = _get_sub(db, user.id)
+    if sub and sub.current_period_end and sub.current_period_end > _now():
+        raise HTTPException(status_code=400, detail="subscription_already_active")
+
+    # Проверка баланса
     current_balance = user.balance_cents or 0
     if current_balance < price_cents:
         raise HTTPException(status_code=402, detail="insufficient funds")
     user.balance_cents = current_balance - price_cents
 
-    sub = _get_sub(db, user.id)
     start_from = _now()
-    if sub and sub.current_period_end and sub.current_period_end > start_from:
-        start_from = sub.current_period_end
-
-    # duration: days / months / years
+    
     dur = PLANS[plan]["duration"]
     if "days" in dur:
         end = start_from + timedelta(days=int(dur["days"]))
@@ -247,16 +230,22 @@ def set_plan(payload: SetPlanIn, db: Session = Depends(get_db)):
         )
         db.add(sub)
     else:
+        # Этого блока по идее не достигнем из-за проверки выше, но оставим для надежности
         sub.plan = plan
         sub.status = "active"
         sub.current_period_end = end
         sub.cancel_at_period_end = False
 
+    # === ОБНОВЛЯЕМ ЛИМИТЫ И СБРАСЫВАЕМ СЧЕТЧИК ===
     credits = _get_or_create_credits(db, user.id)
     plan_limits = PLANS[plan]["limits"]
+    
     credits.msg_limit_base = plan_limits["messages"]
     credits.img_limit_base = plan_limits["images"]
     credits.video_limit_base = plan_limits["video"]
+    
+    # Сбрасываем счетчик при покупке
+    credits.web_queries = 0  
 
     db.commit()
     db.refresh(user)
@@ -275,11 +264,6 @@ def set_plan(payload: SetPlanIn, db: Session = Depends(get_db)):
 
 @router.post("/cancel")
 def cancel(payload: dict, db: Session = Depends(get_db)):
-    """
-    Отмена автопродления:
-      - флаг cancel_at_period_end = True
-      - статус 'canceled', доступ остаётся до current_period_end
-    """
     try:
         chat_id = int(payload["chat_id"])
     except Exception:

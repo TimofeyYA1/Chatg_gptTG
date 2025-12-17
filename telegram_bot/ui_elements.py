@@ -40,7 +40,7 @@ CB_PAY_WEEK = "premium:buy:week"
 CB_PAY_MONTH = "premium:buy:month"
 CB_PAY_YEAR = "premium:buy:year"
 
-# Keys for Result Actions (New)
+# Keys for Result Actions
 CB_SAVE_FILE = "res:save_file"
 CB_GEN_NEW = "res:gen_new"
 
@@ -119,6 +119,7 @@ def kb_home(lang: str = "ru") -> InlineKeyboardMarkup:
 
 # --------- extra callbacks for panels ----------
 CB_BACK_TO_PHOTO = "nav:photo"
+CB_BACK_TO_GENDER = "nav:gender"
 CB_RESTART = "nav:restart"
 
 # --- extra callbacks ---
@@ -174,11 +175,20 @@ def kb_main_menu(lang: str = "ru") -> InlineKeyboardMarkup:
         a, b, c = "🧊 Редактор внешности", "📸 Фотосессии", "⬅️ Назад"
     else:
         a, b, c = "🧊 Look editor", "📸 Photoshoots", "⬅️ Back"
+    
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=a, callback_data=CB_EDITOR_HOME)],
             [InlineKeyboardButton(text=b, callback_data=CB_SHOOT_HOME)],
-            [InlineKeyboardButton(text=c, callback_data=CB_BACK_TO_PHOTO)],
+            [InlineKeyboardButton(text=c, callback_data=CB_BACK_TO_GENDER)],
+        ]
+    )
+
+def kb_back_to_gender(lang: str = "ru") -> InlineKeyboardMarkup:
+    txt = "⬅️ Назад" if lang == "ru" else "⬅️ Back"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=txt, callback_data=CB_BACK_TO_GENDER)],
         ]
     )
 
@@ -295,15 +305,12 @@ def kb_premium_paywall(lang: str = "ru") -> InlineKeyboardMarkup:
 def kb_premium_active(lang: str = "ru") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="⭐ Продлить на неделю", callback_data=CB_PAY_WEEK)],
-            [InlineKeyboardButton(text="✨ Продлить на месяц", callback_data=CB_PAY_MONTH)],
-            [InlineKeyboardButton(text="👑 Продлить на год", callback_data=CB_PAY_YEAR)],
+            # Кнопок продления больше нет, пока подписка активна
             [InlineKeyboardButton(text="✅ Перейти к созданию", callback_data=CB_RESTART)],
         ]
     )
 
 def kb_result_actions(lang: str = "ru") -> InlineKeyboardMarkup:
-    """Кнопки под готовым результатом (Свой промпт)."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="💾 Сохранить в файле", callback_data=CB_SAVE_FILE)],
