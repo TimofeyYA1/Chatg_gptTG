@@ -44,6 +44,12 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    
+    subscription: Mapped["Subscription"] = relationship(
+        "Subscription", 
+        back_populates="user", 
+        uselist=False
+    )
 
 
 class PremiumCredits(Base):
@@ -188,6 +194,8 @@ class Subscription(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    
+    user: Mapped["User"] = relationship("User", back_populates="subscription")
 
 
 class Payment(Base):

@@ -7,10 +7,8 @@ from typing import Any, Dict, Optional, Tuple
 import httpx
 
 API_BASE = os.getenv("API_BASE", "http://api:8000").rstrip("/")
-# Увеличим тайм-аут для генерации, так как картинки делаются долго (до 60 сек)
 API_TIMEOUT = httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=5.0)
 
-# простой кэш, чтобы не долбить API на каждый клик
 _CACHE: Dict[Tuple[int, str], Tuple[float, Any]] = {}
 _CACHE_TTL_SEC = 20
 
@@ -89,32 +87,38 @@ async def balance_topup(chat_id: int, amount_cents: int) -> Dict[str, Any]:
         return {"ok": True}
 
 
-# Paywall settings
-PAYWALL = {
-    "week":  {"plan": "Week",  "stars": 300_00},
-    "month": {"plan": "Month", "stars": 900_00},
-    "year":  {"plan": "Year",  "stars": 4500_00},
-}
-
-_PLAN_ALIASES = {
-    "Light": "Week",
-    "Max": "Month",
-    "Ultra": "Year",
-    "week": "Week",
-    "month": "Month",
-    "year": "Year",
-    "Week": "Week",
-    "Month": "Month",
-    "Year": "Year",
-}
-
-
-def _norm_plan(p: str) -> str:
-    p = (p or "").strip()
-    return _PLAN_ALIASES.get(p, p)
+async def buy_addon(chat_id: int, qty: int, price_cents: int) -> Dict[str, Any]:
+    await balance_topup(chat_id, price_cents)
+    
+    payload = {
+        "chat_id": chat_id,
+        "qty": qty,
+        "price_cents": price_cents
+    }
+    
+    async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+        r = await client.post(f"{API_BASE}/payments/addons/buy", json=payload)
+    
+    if r.status_code != 200:
+        return {"error": True, "detail": r.text, "status": r.status_code}
+    
+    try: return r.json()
+    except: return {"ok": True}
 
 
 async def set_plan(chat_id: int, plan: str | None = None, period: str | None = None) -> Dict[str, Any]:
+    # Логику маппинга оставим на сервере или тут, но для простоты передаем как есть
+    # ... (код set_plan можно оставить как был или упростить если на сервере есть логика)
+    # Предполагаем, что server endpoints уже работают
+    # Здесь упрощенная версия вызова, соответствующая server logic
+    
+    # Для совместимости с текущим кодом:
+    PAYWALL = {
+        "week":  {"plan": "Week",  "stars": 300_00},
+        "month": {"plan": "Month", "stars": 900_00},
+        "year":  {"plan": "Year",  "stars": 4500_00},
+    }
+    
     if period:
         period_key = period.lower()
         if period_key not in PAYWALL:
@@ -122,11 +126,7 @@ async def set_plan(chat_id: int, plan: str | None = None, period: str | None = N
         plan_name = PAYWALL[period_key]["plan"]
         stars = PAYWALL[period_key]["stars"]
     else:
-        plan_name = _norm_plan(plan or "")
-        inv = {v["plan"]: v["stars"] for v in PAYWALL.values()}
-        if plan_name not in inv:
-            return {"error": True, "detail": "unknown plan"}
-        stars = inv[plan_name]
+        return {"error": True, "detail": "unknown plan"}
 
     topup_res = await balance_topup(chat_id, stars)
     if topup_res.get("error"):
@@ -164,41 +164,24 @@ async def cancel_plan(chat_id: int) -> Dict[str, Any]:
         return {"ok": True}
 
 
-# --- NEW: Image Generation/Editing ---
+# --- Image Generation/Editing ---
 
 async def edit_image(chat_id: int, prompt: str, image_b64: str) -> Dict[str, Any]:
-    """
-    Отправляет запрос на редактирование/генерацию по фото.
-    """
     payload = {
         "chat_id": chat_id,
         "prompt": prompt,
         "image_b64": image_b64,
-        "size": "768x768" # Можно вынести в настройки
+        "size": "768x768"
     }
-    
-    # Таймаут здесь нужен побольше, так как генерация тяжелая
     timeout = httpx.Timeout(connect=5.0, read=90.0, write=10.0, pool=5.0)
-    
     async with httpx.AsyncClient(timeout=timeout) as client:
         r = await client.post(f"{API_BASE}/image/edit", json=payload)
-        
     if r.status_code != 200:
         return {"ok": False, "error": r.text, "status": r.status_code}
-        
-    try:
-        return r.json()
-    except:
-        return {"ok": False, "error": "invalid_json"}
+    try: return r.json()
+    except: return {"ok": False, "error": "invalid_json"}
 
-async def generate_from_catalog(
-    chat_id: int, 
-    image_b64: str, 
-    gender: str, 
-    editor_sel: dict, 
-    shoot_sel: dict
-) -> Dict[str, Any]:
-    
+async def generate_from_catalog(chat_id: int, image_b64: str, gender: str, editor_sel: dict, shoot_sel: dict) -> Dict[str, Any]:
     payload = {
         "chat_id": chat_id,
         "image_b64": image_b64,
@@ -206,19 +189,26 @@ async def generate_from_catalog(
         "editor_sel": editor_sel,
         "shoot_sel": shoot_sel
     }
-    
     timeout = httpx.Timeout(connect=5.0, read=90.0, write=10.0, pool=5.0)
-    
     async with httpx.AsyncClient(timeout=timeout) as client:
         r = await client.post(f"{API_BASE}/image/generate_from_catalog", json=payload)
-        
     if r.status_code != 200:
         return {"ok": False, "error": f"HTTP {r.status_code}", "detail": r.text}
-        
+    try: return r.json()
+    except: return {"ok": False, "error": "invalid_json"}
+
+# --- Catalog Info ---
+
+async def get_catalog_page_info(gender: str, cat: str, page: int) -> int:
+    """Запрашивает у сервера кол-во элементов на странице"""
     try:
-        return r.json()
-    except:
-        return {"ok": False, "error": "invalid_json"}
-
-
-
+        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+            r = await client.get(f"{API_BASE}/image/catalog/info", params={"gender": gender, "cat": cat, "page": page})
+        
+        if r.status_code == 200:
+            data = r.json()
+            return data.get("count", 9)
+    except Exception:
+        pass
+    
+    return 9 # Fallback

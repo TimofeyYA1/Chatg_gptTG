@@ -1,19 +1,29 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from sqlalchemy import select
+from sqlalchemy import select, func
 from typing import Dict, Any, Optional
 
 from db_adapter.database import get_db
 from db_adapter.models import User, PremiumCredits, CatalogItem, CatalogPage, CatalogCategory
 from api_server.providers.openai_adapter import OpenAIProvider
 import base64
-
-# --- ЛОГИРОВАНИЕ ---
 import logging
+
 logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter()
+
+# --- CONSTANTS ---
+
+PRESERVE_FACE_INSTRUCTION = (
+    "CRITICAL REQUIREMENT: You MUST preserve the exact facial identity, structure, and features of the person from the source image. "
+    "The output image must look exactly like the same person. "
+    "Do not change the shape of the eyes, nose, mouth, or jawline. "
+    "Keep the skin tone and texture consistent with the original. "
+    "Apply the requested style (hair, clothes, background, artistic effect) AROUND the face, but keep the face recognizable. "
+    "High fidelity face swap."
+)
 
 # --- Pydantic Models ---
 
@@ -47,29 +57,40 @@ def _check_and_increment_limit(db: Session, user: User) -> bool:
 
     used = credits.web_queries or 0
     limit = credits.img_limit_base or 0
+    addons = credits.image_credits or 0
     
-    # Если лимит > 0, проверяем. Если 0 (бесплатно), не пускаем (или пускаем, если это админ)
-    # Тут строгая логика: если лимит 0 и использовано 0 — это конец.
-    if limit > 0 and used >= limit:
+    if limit == 0 and addons == 0:
         return False
-    
-    # Инкремент
-    credits.web_queries = used + 1
+        
+    if used < limit:
+        credits.web_queries = used + 1
+    else:
+        if addons > 0:
+            credits.image_credits = addons - 1
+        else:
+            return False
+            
     db.commit()
     return True
 
+def _rollback_limit(db: Session, user: User):
+    credits = db.query(PremiumCredits).filter(PremiumCredits.user_id == user.id).first()
+    if not credits: return
+    
+    if credits.web_queries > 0:
+        credits.web_queries -= 1
+    else:
+        credits.image_credits = (credits.image_credits or 0) + 1
+    db.commit()
+
 def _get_prompt_by_global_idx(db: Session, gender: str, cat_slug: str, global_idx: int) -> str | None:
-    """
-    Превращает глобальный индекс (1..N) в запись из БД.
-    """
     ITEMS_PER_PAGE = 9
     
     page_num = (global_idx - 1) // ITEMS_PER_PAGE + 1
     slot_num = (global_idx - 1) % ITEMS_PER_PAGE + 1
 
-    logger.info(f"🔍 Поиск в БД: Категория='{cat_slug}', Пол='{gender}', Стр={page_num}, Слот={slot_num}")
+    logger.info(f"🔎 Поиск в БД: {cat_slug} #{global_idx} (pg {page_num}, slot {slot_num})")
 
-    # Ищем категорию
     stmt = (
         select(CatalogItem.prompt)
         .join(CatalogPage, CatalogItem.page_id == CatalogPage.id)
@@ -81,26 +102,37 @@ def _get_prompt_by_global_idx(db: Session, gender: str, cat_slug: str, global_id
             CatalogItem.slot_number == slot_num
         )
     )
-    result = db.execute(stmt).scalar_one_or_none()
-    
-    if result:
-        logger.info(f"✅ Промпт найден: {result[:50]}...")
-    else:
-        logger.warning(f"❌ Промпт НЕ найден! Проверьте catalog_data.json и sync_catalog.py")
-        
-    return result
+    return db.execute(stmt).scalar_one_or_none()
 
 # --- Routes ---
 
+@router.get("/catalog/info")
+def get_catalog_page_info(gender: str, cat: str, page: int, db: Session = Depends(get_db)):
+    """
+    Возвращает количество элементов на конкретной странице категории.
+    Используется ботом для отрисовки правильного количества кнопок.
+    """
+    stmt = (
+        select(func.count(CatalogItem.id))
+        .join(CatalogPage, CatalogItem.page_id == CatalogPage.id)
+        .join(CatalogCategory, CatalogPage.category_id == CatalogCategory.id)
+        .where(
+            CatalogCategory.slug == cat,
+            CatalogCategory.gender == gender,
+            CatalogPage.page_number == page
+        )
+    )
+    count = db.execute(stmt).scalar() or 0
+    
+    # Если элементов 0, возможно такой страницы нет, возвращаем дефолт 9 или 0
+    # Но лучше честный count.
+    return {"count": count}
+
+
 @router.post("/generate_from_catalog")
 def generate_from_catalog(data: CatalogGenIn, db: Session = Depends(get_db)):
-    """
-    Генерация на основе выбора в каталоге (Editor или Shoot).
-    """
-    logger.info(f"🚀 Новый запрос генерации: chat_id={data.chat_id}, gender={data.gender}")
-    logger.info(f"📥 Выбор: Shoot={data.shoot_sel}, Editor={data.editor_sel}")
+    logger.info(f"🚀 Генерация из каталога для {data.chat_id}")
 
-    # 1. User check
     user = db.query(User).filter(User.chat_id == data.chat_id).first()
     if not user:
         user = User(chat_id=data.chat_id)
@@ -108,102 +140,84 @@ def generate_from_catalog(data: CatalogGenIn, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(user)
 
-    # 2. Limits check
     if not _check_and_increment_limit(db, user):
-        logger.warning(f"⛔ Лимит исчерпан для {data.chat_id}")
         return {"ok": False, "error": "limit_exceeded"}
 
-    # 3. Build Prompt
-    final_prompt = ""
+    prompt_parts = []
     
-    # А) ФОТОСЕССИЯ
     if data.shoot_sel and data.shoot_sel.get("cat") and data.shoot_sel.get("idx"):
         cat = data.shoot_sel["cat"]
         idx = int(data.shoot_sel["idx"])
-        prompt = _get_prompt_by_global_idx(db, data.gender, cat, idx)
-        
-        if prompt:
-            final_prompt = f"professional photo, {prompt}, preserve facial features, high quality, 8k"
+        db_prompt = _get_prompt_by_global_idx(db, data.gender, cat, idx)
+        if db_prompt:
+            prompt_parts.append(f"{db_prompt}")
         else:
-            logger.error("❌ Ошибка: не удалось найти промпт для фотосессии")
+            _rollback_limit(db, user)
             return {"ok": False, "error": "preset_not_found"}
 
-    # Б) РЕДАКТОР
     elif data.editor_sel:
-        prompts_list = []
         base = "man" if data.gender == "m" else "woman"
-        prompts_list.append(f"portrait of a {base}")
-        
+        changes = []
         for cat, idx in data.editor_sel.items():
             if not idx: continue
             p = _get_prompt_by_global_idx(db, data.gender, cat, int(idx))
-            if p:
-                prompts_list.append(p)
+            if p: changes.append(p)
         
-        if len(prompts_list) == 1:
+        if not changes:
+            _rollback_limit(db, user)
             return {"ok": False, "error": "no_selection"}
             
-        prompts_list.append("realistic, 8k, high detailed, preserve facial features")
-        final_prompt = ", ".join(prompts_list)
+        combined_features = ", ".join(changes)
+        prompt_parts.append(f"A photorealistic portrait of a {base} with {combined_features}")
     
     else:
-        logger.error("❌ Ошибка: пустой выбор (нет ни editor, ни shoot)")
+        _rollback_limit(db, user)
         return {"ok": False, "error": "no_selection"}
 
-    logger.info(f"🎨 Итоговый промпт: {final_prompt}")
+    prompt_parts.append(PRESERVE_FACE_INSTRUCTION)
+    final_prompt = ". ".join(prompt_parts)
+    logger.info(f"📝 Итоговый промпт: {final_prompt[:200]}...")
 
-    # 4. Generate
     try:
         raw_image = base64.b64decode(data.image_b64)
     except Exception:
+        _rollback_limit(db, user)
         return {"ok": False, "error": "bad_image_b64"}
 
     provider = OpenAIProvider()
-    
-    # --- ВАЖНО: Если у тебя нет рабочего API ключа, provider вернет оригинал ---
-    logger.info("📡 Отправка запроса в нейросеть (OpenAIProvider)...")
     b64 = provider.edit_image_b64(raw_image, final_prompt, size="768x768")
 
     if not b64:
-        logger.warning("⚠️ Нейросеть вернула пустой результат (или заглушку)")
-        return {
-            "ok": True,
-            "stub": True,
-            "caption": final_prompt
-        }
+        _rollback_limit(db, user)
+        return {"ok": True, "stub": True, "caption": "⚠️ Не удалось сгенерировать изображение."}
 
-    # Проверка: если вернулось то же самое фото (сравнение по длине байтов грубо, но эффективно)
-    if len(b64) == len(data.image_b64):
-        logger.warning("⚠️ Внимание! OpenAIProvider вернул исходное изображение. Проверь API Key или реализацию адаптера.")
+    return {"ok": True, "stub": False, "b64": b64, "caption": "✨ Готово!"}
 
-    return {
-        "ok": True,
-        "stub": False,
-        "b64": b64,
-        "caption": "✨ Готово!"
-    }
-
-
-@router.post("/generate")
-def generate_image(data: ImageIn, db: Session = Depends(get_db)):
-    pass 
 
 @router.post("/edit")
 def edit_image(data: ImageEditIn, db: Session = Depends(get_db)):
-    # ... (аналогично с проверкой лимитов)
     user = db.query(User).filter(User.chat_id == data.chat_id).first()
+    if not user:
+        user = User(chat_id=data.chat_id)
+        db.add(user); db.commit()
+
     if not _check_and_increment_limit(db, user):
         return {"ok": False, "error": "limit_exceeded"}
 
     try:
         raw_image = base64.b64decode(data.image_b64)
     except Exception:
+        _rollback_limit(db, user)
         return {"ok": False, "error": "bad_image_b64"}
 
     provider = OpenAIProvider()
-    b64 = provider.edit_image_b64(raw_image, data.prompt, size=data.size or "768x768")
+    full_prompt = f"{data.prompt}. {PRESERVE_FACE_INSTRUCTION}"
+    logger.info(f"📝 Custom Edit Prompt: {full_prompt[:100]}...")
+
+    b64 = provider.edit_image_b64(raw_image, full_prompt, size=data.size or "768x768")
 
     if not b64:
-        return {"ok": True, "stub": True, "caption": data.prompt}
+        _rollback_limit(db, user)
+        return {"ok": True, "stub": True, "caption": "⚠️ Генерация не удалась."}
 
-    return {"ok": True, "stub": False, "b64": b64, "caption": data.prompt}
+    return {"ok": True, "stub": False, "b64": b64, "caption": "✨ Готово!"}

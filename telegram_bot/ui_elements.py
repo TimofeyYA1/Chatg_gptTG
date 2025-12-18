@@ -1,4 +1,6 @@
 from __future__ import annotations 
+import os
+from typing import Optional
 
 from aiogram.types import (
     InlineKeyboardMarkup,
@@ -6,6 +8,49 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
     KeyboardButton,
 )
+
+# ---------- ASSETS HELPERS ----------
+
+def _assets(*parts: str) -> str:
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "assets", *parts))
+
+def _find(base_no_ext: str) -> Optional[str]:
+    for ext in (".jpg", ".png", ".jpeg", ".webp"):
+        p = base_no_ext + ext
+        if os.path.exists(p):
+            return p
+    return None
+
+def img_ui(name: str) -> str:
+    """Ищет картинку интерфейса в assets/ui/name.*"""
+    p = _find(_assets("ui", name))
+    if p:
+        return p
+    # Fallback
+    fallback = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "topper.jpg"))
+    if os.path.exists(fallback):
+        return fallback
+    return ""
+
+
+# ---------- NAMES & TITLES ----------
+
+CATALOG_NAMES = {
+    "hair": "✂️ Прическа",
+    "color": "🎨 Цвет волос",
+    "piercing": "📌 Пирсинг",
+    "moustache": "🥸 Усы",
+    "beard": "🧔 Борода",
+    "glasses": "👓 Очки",
+    "trends": "🔥 Тренды",
+    "winter": "❄️ Зимние стили",
+    "sets": "📷 Фотосеты",
+    "looks": "🧩 Готовые образы",
+}
+
+def get_cat_title(cat: str) -> str:
+    return CATALOG_NAMES.get(cat, cat.capitalize())
+
 
 # ---------- callback keys ----------
 CB_LANG_RU = "lang:ru"
@@ -20,31 +65,55 @@ CB_BACK = "nav:back"
 CB_EDITOR = "mode:editor"
 CB_SHOOTS = "mode:shoots"
 
-CB_TOGGLE_HAIR = "edit:toggle:hair"
-CB_TOGGLE_COLOR = "edit:toggle:color"
-CB_TOGGLE_PIERCING = "edit:toggle:piercing"
-CB_TOGGLE_MOUSTACHE = "edit:toggle:moustache"
-CB_TOGGLE_BEARD = "edit:toggle:beard"
-CB_TOGGLE_GLASSES = "edit:toggle:glasses"
-
 CB_RESET = "edit:reset"
 CB_GENERATE = "gen:go"
 
-CB_SHOOT_TRENDS = "shoot:cat:trends"
-CB_SHOOT_WINTER = "shoot:cat:winter"
-CB_SHOOT_SETS = "shoot:cat:sets"
-CB_SHOOT_LOOKS = "shoot:cat:looks"
-
-# Keys for payment
+# Keys for payment plans
 CB_PAY_WEEK = "premium:buy:week"
 CB_PAY_MONTH = "premium:buy:month"
 CB_PAY_YEAR = "premium:buy:year"
+CB_CANCEL_SUB = "premium:cancel"
+
+# Keys for packages
+CB_PKG_150 = "pkg:150"
+CB_PKG_1000 = "pkg:1000"
+CB_PKG_5000 = "pkg:5000"
 
 # Keys for Result Actions
 CB_SAVE_FILE = "res:save_file"
-CB_GEN_NEW = "res:gen_new"
+CB_GEN_SAME_PHOTO = "res:same_photo" 
+CB_GEN_NEW_PHOTO = "res:new_photo"   
 
-# ---------- texts ----------
+# Help
+CB_LANG_TOGGLE = "help:lang"
+
+# Navigation
+CB_BACK_TO_PHOTO = "nav:photo"
+CB_BACK_TO_GENDER = "nav:gender"
+CB_RESTART = "nav:restart"
+
+# Extra
+CB_UPLOAD = "nav:upload"
+CB_STYLES_M = "styles:m"
+CB_STYLES_F = "styles:f"
+CB_CUSTOM_PROMPT = "styles:prompt"
+
+CB_MENU = "nav:menu"
+CB_EDITOR_HOME = "editor:home"
+CB_EDITOR_CAT = "editor:cat"
+CB_EDITOR_PICK = "editor:pick"
+CB_EDITOR_NONE = "editor:none"
+CB_NEXT = "nav:next"
+CB_PREV = "nav:prev"
+
+CB_SHOOT_HOME = "shoot:home"
+CB_SHOOT_CAT = "shoot:cat"
+CB_SHOOT_PAGE = "shoot:page"
+CB_SHOOT_PICK = "shoot:pick"
+
+
+# ---------- TEXTS ----------
+
 TEXTS = {
     "ru": {
         "start_title": "✨ <b>MyLook</b> — AI-лаборатория внешности в Telegram.",
@@ -53,12 +122,7 @@ TEXTS = {
         "pick_gender": "🟡 Выбери свой пол:",
         "send_photo": "📸 Отправьте фото, где хорошо видно лицо — это нужно для корректной генерации образа.",
         "photo_ok": "Фото принято ✅ Теперь выбирай режим:",
-        "home_hint": "Можно собрать стиль точечно или выбрать готовую фотосессию.",
-        "editor_hint": "🎛 <b>Редактор внешности</b> — точечные изменения образа.",
-        "shoots_hint": "📸 <b>Фотосессии</b> — готовые стилизованные AI-съёмки в один клик.",
         "gen_wait": "⏳ Генерирую… секундочку.",
-        "gen_done": "✨ Готово. <i>Сделано с любовью</i>.",
-        "status_prefix": "Твои выбранные изменения:",
     },
 }
 
@@ -70,7 +134,53 @@ PREMIUM_PAYWALL_CAPTION_RU = (
     "🖼 Скачивание в HD качестве\n"
 )
 
-# ---------- keyboards ----------
+TEXT_PREMIUM_ACTIVE_TEMPLATE = (
+    "<b>У вас максимальный доступ</b>\n\n"
+    "✨ Доступно генераций: <b>{available}</b>\n"
+    "🌸 Подписка: <b>Премиум на {plan_name} ({limit} генераций)</b>\n"
+    "{renewal_info}\n\n"
+    "Дополнительные пакеты генераций можно приобрести в разделе /packages.\n\n"
+    "🎁 Приглашайте друзей и получайте бесплатные генерации. 1 приглашенный друг = 3 генерации. "
+    "Приглашено друзей: {invited_count}"
+)
+
+TEXT_HELP_RU = (
+    "💡 <b>Как использовать:</b>\n"
+    "1. Отправьте фото своего лица\n"
+    "2. Выберите пол\n"
+    "3. Настройте ваш стиль\n"
+    "4. Нажмите \"Сгенерировать\"\n"
+    "5. Получите новый образ!\n\n"
+    "🔘 Применение готовых образов (стилей, фотосессий, трендов) сбрасывает все текущие выбранные изменения.\n"
+    "🔘 Важно: отправляйте фото, где хорошо видно лицо.\n\n"
+    "Если у вас возникнут вопросы или предложения, свяжитесь с администратором @BeautyAIMasterHelpBot\n\n"
+    "<a href='https://google.com'>Пользовательское соглашение</a>"
+)
+
+TEXT_HELP_EN = (
+    "💡 <b>How to use:</b>\n"
+    "1. Send a photo of your face\n"
+    "2. Select gender\n"
+    "3. Customize your style\n"
+    "4. Click \"Generate\"\n"
+    "5. Get a new look!\n\n"
+    "🔘 Applying ready-made looks resets current edits.\n"
+    "🔘 Important: send a photo with a clearly visible face.\n\n"
+    "Contact support: @BeautyAIMasterHelpBot\n\n"
+    "<a href='https://google.com'>Terms of Service</a>"
+)
+
+TEXT_PACKAGES_CAPTION = (
+    "<b>Дополнительные генерации</b> 🔥\n\n"
+    "Пакет является дополнением к действующей премиум подписке\n\n"
+    "⚠️ Пакет активен до конца действия премиум-подписки. "
+    "При отмене премиума неиспользованные генерации сгорают, "
+    "при продлении подписки — переносятся на следующий период."
+)
+
+
+# ---------- KEYBOARDS ----------
+
 def kb_lang() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -96,14 +206,6 @@ def kb_gender(lang: str = "ru") -> InlineKeyboardMarkup:
         ]
     )
 
-def kb_request_photo(lang: str = "ru") -> ReplyKeyboardMarkup:
-    text = "📸 Загрузить фото" if lang == "ru" else "📸 Upload photo"
-    return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=text, request_photo=True)]],
-        resize_keyboard=True,
-        is_persistent=True,
-    )
-
 def kb_home(lang: str = "ru") -> InlineKeyboardMarkup:
     if lang == "en":
         a, b = "🎛 Look editor", "📸 Photoshoots"
@@ -116,45 +218,6 @@ def kb_home(lang: str = "ru") -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text=b, callback_data=CB_SHOOTS)],
         ]
     )
-
-# --------- extra callbacks for panels ----------
-CB_BACK_TO_PHOTO = "nav:photo"
-CB_BACK_TO_GENDER = "nav:gender"
-CB_RESTART = "nav:restart"
-
-# --- extra callbacks ---
-CB_UPLOAD = "nav:upload"
-CB_STYLES_M = "styles:m"
-CB_STYLES_F = "styles:f"
-CB_CUSTOM_PROMPT = "styles:prompt"
-
-CB_MENU = "nav:menu"
-CB_EDITOR_HOME = "editor:home"
-CB_EDITOR_CAT = "editor:cat"
-CB_EDITOR_PICK = "editor:pick"
-CB_EDITOR_NONE = "editor:none"
-CB_NEXT = "nav:next"
-CB_PREV = "nav:prev"
-
-CB_SHOOT_HOME = "shoot:home"
-CB_SHOOT_CAT = "shoot:cat"
-CB_SHOOT_PAGE = "shoot:page"
-CB_SHOOT_PICK = "shoot:pick"
-
-
-def kb_start_upload(lang: str = "ru") -> InlineKeyboardMarkup:
-    txt = "🟡 ЗАГРУЗИТЬ ФОТО" if lang == "ru" else "🟡 UPLOAD PHOTO"
-    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=txt, callback_data=CB_UPLOAD)]])
-
-
-def kb_request_photo_one(lang: str = "ru") -> ReplyKeyboardMarkup:
-    txt = "📸 Загрузить фото" if lang == "ru" else "📸 Upload photo"
-    return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=txt, request_photo=True)]],
-        resize_keyboard=True,
-        is_persistent=True,
-    )
-
 
 def kb_gender_or_prompt(lang: str = "ru") -> InlineKeyboardMarkup:
     if lang == "ru":
@@ -197,16 +260,16 @@ def kb_editor_home(lang: str = "ru") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="✂️ Прическа" if lang=="ru" else "✂️ Hairstyle", callback_data="editor:open:hair"),
-                InlineKeyboardButton(text="🎨 Цвет волос" if lang=="ru" else "🎨 Hair color", callback_data="editor:open:color"),
+                InlineKeyboardButton(text="✂️ Прическа", callback_data="editor:open:hair"),
+                InlineKeyboardButton(text="🎨 Цвет волос", callback_data="editor:open:color"),
             ],
             [
-                InlineKeyboardButton(text="📌 Пирсинг" if lang=="ru" else "📌 Piercing", callback_data="editor:open:piercing"),
-                InlineKeyboardButton(text="🥸 Усы" if lang=="ru" else "🥸 Moustache", callback_data="editor:open:moustache"),
+                InlineKeyboardButton(text="📌 Пирсинг", callback_data="editor:open:piercing"),
+                InlineKeyboardButton(text="🥸 Усы", callback_data="editor:open:moustache"),
             ],
             [
-                InlineKeyboardButton(text="🧔 Борода" if lang=="ru" else "🧔 Beard", callback_data="editor:open:beard"),
-                InlineKeyboardButton(text="👓 Очки" if lang=="ru" else "👓 Glasses", callback_data="editor:open:glasses"),
+                InlineKeyboardButton(text="🧔 Борода", callback_data="editor:open:beard"),
+                InlineKeyboardButton(text="👓 Очки", callback_data="editor:open:glasses"),
             ],
             [InlineKeyboardButton(text="✅ Сгенерировать" if lang=="ru" else "✅ Generate", callback_data=CB_GENERATE)],
             [InlineKeyboardButton(text="⬅️ Назад" if lang=="ru" else "⬅️ Back", callback_data=CB_MENU)],
@@ -290,7 +353,7 @@ def kb_shoots_home(lang: str = "ru") -> InlineKeyboardMarkup:
 
 def kb_premium_paywall(lang: str = "ru") -> InlineKeyboardMarkup:
     if lang == "en":
-        w, m, y = "⭐ Buy week", "✨ Buy month", "👑 Buy year"
+        w, m, y = "⭐ Купить на неделю", "✨ Купить на месяц", "👑 Купить на год"
     else:
         w, m, y = "⭐ Купить на неделю", "✨ Купить на месяц", "👑 Купить на год"
 
@@ -302,18 +365,33 @@ def kb_premium_paywall(lang: str = "ru") -> InlineKeyboardMarkup:
         ]
     )
 
-def kb_premium_active(lang: str = "ru") -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            # Кнопок продления больше нет, пока подписка активна
-            [InlineKeyboardButton(text="✅ Перейти к созданию", callback_data=CB_RESTART)],
-        ]
-    )
+def kb_premium_active(user_id: int, bot_name: str = "mylookbot", auto_renew: bool = True) -> InlineKeyboardMarkup:
+    ref_link = f"https://t.me/{bot_name}?start={user_id}"
+    rows = []
+    rows.append([InlineKeyboardButton(text="💌 Поделиться ссылкой", url=f"https://t.me/share/url?url={ref_link}")])
+    if auto_renew:
+        rows.append([InlineKeyboardButton(text="❌ Отменить подписку", callback_data=CB_CANCEL_SUB)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 def kb_result_actions(lang: str = "ru") -> InlineKeyboardMarkup:
+    """3 кнопки вертикально для удобства"""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="💾 Сохранить в файле", callback_data=CB_SAVE_FILE)],
-            [InlineKeyboardButton(text="🔄 Генерировать дальше", callback_data=CB_GEN_NEW)],
+            [InlineKeyboardButton(text="🎨 Редактировать текущее фото", callback_data=CB_GEN_SAME_PHOTO)],
+            [InlineKeyboardButton(text="📸 Создать новый образ", callback_data=CB_GEN_NEW_PHOTO)],
         ]
     )
+
+def kb_help(lang: str = "ru") -> InlineKeyboardMarkup:
+    lbl = "Change Language 🇺🇸" if lang == "ru" else "Сменить язык 🇷🇺"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=lbl, callback_data=CB_LANG_TOGGLE)]
+    ])
+
+def kb_packages(lang: str = "ru") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⭐ Купить 150 генераций — 349₽ / 260⭐", callback_data=CB_PKG_150)],
+        [InlineKeyboardButton(text="✨ Купить 1000 генераций — 1999₽ / 1500⭐", callback_data=CB_PKG_1000)],
+        [InlineKeyboardButton(text="🤩 Купить 5000 генераций — 5999₽ / 4500⭐", callback_data=CB_PKG_5000)],
+    ])
