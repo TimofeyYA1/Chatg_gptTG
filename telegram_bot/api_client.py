@@ -107,12 +107,6 @@ async def buy_addon(chat_id: int, qty: int, price_cents: int) -> Dict[str, Any]:
 
 
 async def set_plan(chat_id: int, plan: str | None = None, period: str | None = None) -> Dict[str, Any]:
-    # Логику маппинга оставим на сервере или тут, но для простоты передаем как есть
-    # ... (код set_plan можно оставить как был или упростить если на сервере есть логика)
-    # Предполагаем, что server endpoints уже работают
-    # Здесь упрощенная версия вызова, соответствующая server logic
-    
-    # Для совместимости с текущим кодом:
     PAYWALL = {
         "week":  {"plan": "Week",  "stars": 300_00},
         "month": {"plan": "Month", "stars": 900_00},
@@ -173,6 +167,7 @@ async def edit_image(chat_id: int, prompt: str, image_b64: str) -> Dict[str, Any
         "image_b64": image_b64,
         "size": "768x768"
     }
+    # Увеличенный тайм-аут для генерации
     timeout = httpx.Timeout(connect=5.0, read=90.0, write=10.0, pool=5.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         r = await client.post(f"{API_BASE}/image/edit", json=payload)
@@ -200,15 +195,21 @@ async def generate_from_catalog(chat_id: int, image_b64: str, gender: str, edito
 # --- Catalog Info ---
 
 async def get_catalog_page_info(gender: str, cat: str, page: int) -> int:
-    """Запрашивает у сервера кол-во элементов на странице"""
+    """
+    Запрашивает у сервера кол-во элементов на странице.
+    Если сервер недоступен или вернул 0 (нет данных в БД), возвращает 9.
+    """
     try:
         async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
             r = await client.get(f"{API_BASE}/image/catalog/info", params={"gender": gender, "cat": cat, "page": page})
         
         if r.status_code == 200:
             data = r.json()
-            return data.get("count", 9)
+            count = data.get("count", 0)
+            # ФИКС: Если база пустая (count=0), возвращаем 9, чтобы кнопки не пропадали
+            return count if count > 0 else 9
+            
     except Exception:
         pass
     
-    return 9 # Fallback
+    return 9 # Fallback на случай ошибки сети
