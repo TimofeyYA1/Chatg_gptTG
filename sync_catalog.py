@@ -30,30 +30,33 @@ def sync_db_from_json(json_file: str):
         print("❌ Ошибка: Не удалось прочитать JSON.")
         return
 
-    # Создаем таблицы если их нет
+    print("🔄 [Catalog Sync] Пересоздание таблиц каталога...")
+    
+    # 1. Жестко удаляем старые таблицы, чтобы сбросить схему (indexes/constraints)
+    try:
+        with engine.connect() as conn:
+            # Удаляем таблицы в обратном порядке зависимости
+            conn.execute(text("DROP TABLE IF EXISTS catalog_items CASCADE"))
+            conn.execute(text("DROP TABLE IF EXISTS catalog_pages CASCADE"))
+            conn.execute(text("DROP TABLE IF EXISTS catalog_categories CASCADE"))
+            conn.commit() # ВАЖНО: Фиксируем удаление
+            print("✅ Старые таблицы удалены.")
+    except Exception as e:
+        print(f"⚠️ Ошибка при удалении таблиц: {e}")
+
+    # 2. Создаем таблицы заново с новой схемой
     try:
         Base.metadata.create_all(bind=engine)
+        print("✅ Новые таблицы созданы.")
     except Exception as e:
         print(f"⚠️ Ошибка создания таблиц: {e}")
+        return
 
     db: Session = SessionLocal()
     
     try:
-        print("🔄 [Catalog Sync] Обновление каталога в БД...")
+        print("📥 [Catalog Sync] Загрузка данных...")
         
-        # Полная очистка таблиц перед загрузкой (чтобы удалить старое/ненужное)
-        try:
-            db.execute(text("TRUNCATE TABLE catalog_items RESTART IDENTITY CASCADE;"))
-            db.execute(text("TRUNCATE TABLE catalog_pages RESTART IDENTITY CASCADE;"))
-            db.execute(text("TRUNCATE TABLE catalog_categories RESTART IDENTITY CASCADE;"))
-        except Exception:
-            # Fallback если truncate не сработал
-            db.query(CatalogItem).delete()
-            db.query(CatalogPage).delete()
-            db.query(CatalogCategory).delete()
-        
-        db.commit()
-
         count_items = 0
         for cat_data in data:
             category = CatalogCategory(
@@ -86,10 +89,10 @@ def sync_db_from_json(json_file: str):
                     count_items += 1
         
         db.commit()
-        print(f"✅ [Catalog Sync] Готово! Загружено элементов: {count_items}")
+        print(f"✅ [Catalog Sync] Успешно! Загружено элементов: {count_items}")
 
     except Exception as e:
-        print(f"❌ [Catalog Sync] Ошибка: {e}")
+        print(f"❌ [Catalog Sync] Ошибка транзакции: {e}")
         db.rollback()
     finally:
         db.close()

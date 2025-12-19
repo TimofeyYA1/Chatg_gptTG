@@ -42,6 +42,7 @@ CATALOG_NAMES = {
     "moustache": "🥸 Усы",
     "beard": "🧔 Борода",
     "glasses": "👓 Очки",
+    "makeup": "💄 Макияж",
     "trends": "🔥 Тренды",
     "winter": "❄️ Зимние стили",
     "sets": "📷 Фотосеты",
@@ -91,6 +92,7 @@ CB_LANG_TOGGLE = "help:lang"
 CB_BACK_TO_PHOTO = "nav:photo"
 CB_BACK_TO_GENDER = "nav:gender"
 CB_RESTART = "nav:restart"
+CB_GOTO_EDIT = "nav:goto_edit"
 
 # Extra
 CB_UPLOAD = "nav:upload"
@@ -134,6 +136,12 @@ PREMIUM_PAYWALL_CAPTION_RU = (
     "🖼 Скачивание в HD качестве\n"
 )
 
+TEXT_FREE_TRIAL_ENDED = (
+    "<b>😢 Бесплатная попытка закончилась</b>\n\n"
+    "Хочешь такие же фото, но без ограничений?\n"
+    "Оформи подписку и генерируй сотни образов!"
+)
+
 TEXT_PREMIUM_ACTIVE_TEMPLATE = (
     "<b>У вас максимальный доступ</b>\n\n"
     "✨ Доступно генераций: <b>{available}</b>\n"
@@ -146,7 +154,6 @@ TEXT_PREMIUM_ACTIVE_TEMPLATE = (
 
 TEXT_HELP_RU = (
     "💡 <b>Как использовать:</b>\n"
-    "0. Используйте команду /start\n"
     "1. Отправьте фото своего лица\n"
     "2. Выберите пол\n"
     "3. Настройте ваш стиль\n"
@@ -257,25 +264,43 @@ def kb_back_to_gender(lang: str = "ru") -> InlineKeyboardMarkup:
     )
 
 
-def kb_editor_home(lang: str = "ru") -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="✂️ Прическа", callback_data="editor:open:hair"),
-                InlineKeyboardButton(text="🎨 Цвет волос", callback_data="editor:open:color"),
-            ],
-            [
-                InlineKeyboardButton(text="📌 Пирсинг", callback_data="editor:open:piercing"),
-                InlineKeyboardButton(text="🥸 Усы", callback_data="editor:open:moustache"),
-            ],
-            [
-                InlineKeyboardButton(text="🧔 Борода", callback_data="editor:open:beard"),
-                InlineKeyboardButton(text="👓 Очки", callback_data="editor:open:glasses"),
-            ],
-            [InlineKeyboardButton(text="✅ Сгенерировать" if lang=="ru" else "✅ Generate", callback_data=CB_GENERATE)],
-            [InlineKeyboardButton(text="⬅️ Назад" if lang=="ru" else "⬅️ Back", callback_data=CB_MENU)],
-        ]
-    )
+def kb_editor_home(lang: str = "ru", gender: str = "m") -> InlineKeyboardMarkup:
+    """Динамическая клавиатура редактора в зависимости от пола"""
+    rows = []
+    
+    # 1. Прическа и Цвет (у всех)
+    rows.append([
+        InlineKeyboardButton(text="✂️ Прическа", callback_data="editor:open:hair"),
+        InlineKeyboardButton(text="🎨 Цвет волос", callback_data="editor:open:color"),
+    ])
+    
+    # 2. Специфичные категории
+    if gender == "f":
+        # Женщины: Макияж, Пирсинг
+        rows.append([
+            InlineKeyboardButton(text="💄 Макияж", callback_data="editor:open:makeup"),
+            InlineKeyboardButton(text="📌 Пирсинг", callback_data="editor:open:piercing"),
+        ])
+        # Очки (отдельно или с чем-то)
+        rows.append([
+            InlineKeyboardButton(text="👓 Очки", callback_data="editor:open:glasses"),
+        ])
+    else:
+        # Мужчины: Пирсинг, Усы, Борода, Очки
+        rows.append([
+            InlineKeyboardButton(text="📌 Пирсинг", callback_data="editor:open:piercing"),
+            InlineKeyboardButton(text="🥸 Усы", callback_data="editor:open:moustache"),
+        ])
+        rows.append([
+            InlineKeyboardButton(text="🧔 Борода", callback_data="editor:open:beard"),
+            InlineKeyboardButton(text="👓 Очки", callback_data="editor:open:glasses"),
+        ])
+
+    # Навигация
+    rows.append([InlineKeyboardButton(text="✅ Сгенерировать" if lang=="ru" else "✅ Generate", callback_data=CB_GENERATE)])
+    rows.append([InlineKeyboardButton(text="⬅️ Назад" if lang=="ru" else "⬅️ Back", callback_data=CB_MENU)])
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def kb_picker(
@@ -366,12 +391,19 @@ def kb_premium_paywall(lang: str = "ru") -> InlineKeyboardMarkup:
         ]
     )
 
-def kb_premium_active(user_id: int, bot_name: str = "mylookbot", auto_renew: bool = True) -> InlineKeyboardMarkup:
+def kb_premium_active(user_id: int, bot_name: str = "mylookbot", auto_renew: bool = True, show_edit_btn: bool = False) -> InlineKeyboardMarkup:
+    """Кнопки под активной подпиской."""
     ref_link = f"https://t.me/{bot_name}?start={user_id}"
     rows = []
+    
+    if show_edit_btn:
+        rows.append([InlineKeyboardButton(text="🎨 Редактировать фото", callback_data=CB_GOTO_EDIT)])
+        
     rows.append([InlineKeyboardButton(text="💌 Поделиться ссылкой", url=f"https://t.me/share/url?url={ref_link}")])
+    
     if auto_renew:
         rows.append([InlineKeyboardButton(text="❌ Отменить подписку", callback_data=CB_CANCEL_SUB)])
+        
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 def kb_result_actions(lang: str = "ru") -> InlineKeyboardMarkup:

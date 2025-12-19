@@ -280,3 +280,4 @@ def generate_json_file():
 
 if __name__ == "__main__":
     generate_json_file()
+

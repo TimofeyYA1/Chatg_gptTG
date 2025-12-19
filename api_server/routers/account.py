@@ -1,4 +1,3 @@
-# api_server/routers/account.py
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -44,12 +43,14 @@ def _get_sub(db: Session, user_id: int) -> Optional[Subscription]:
 def _get_or_create_credits(db: Session, user: User) -> PremiumCredits:
     """
     Гарантированно возвращает PremiumCredits для юзера.
+    При создании нового — даем 1 бесплатную генерацию (image_credits=1).
     """
     p = user.premium
     if p:
         return p
 
-    p = PremiumCredits(user_id=user.id)
+    # --- ИЗМЕНЕНИЕ: Даем 1 бесплатную генерацию при создании ---
+    p = PremiumCredits(user_id=user.id, image_credits=1)
     db.add(p)
     db.commit()
     db.refresh(p)
@@ -81,22 +82,20 @@ def profile(chat_id: int, db: Session = Depends(get_db)):
 
     # --- usage из PremiumCredits ---
     usage = {
-        "messages": credits.total_queries or 0,   # сколько текстовых запросов сделал
-        "images":   credits.web_queries or 0,     # сколько фактически использовано генераций картинок
-        "video":    credits.video_used or 0,      # сколько фактически использовано видео
+        "messages": credits.total_queries or 0,
+        "images":   credits.web_queries or 0,
+        "video":    credits.video_used or 0,
     }
 
     # --- лимиты / докупки ---
     premium_block = {
-        # базовые лимиты по тарифу (могут заполняться логикой подписки)
         "msg_limit_base":   credits.msg_limit_base or 0,
         "img_limit_base":   credits.img_limit_base or 0,
         "video_limit_base": credits.video_limit_base or 0,
 
-        # докупленные/оставшиеся лимиты сверху
-        "web_queries_left":   credits.web_queries_left or 0,   # доп. текст
-        "image_credits":      credits.image_credits or 0,      # доп. картинки
-        "video_seconds_left": credits.video_seconds_left or 0, # доп. видео
+        "web_queries_left":   credits.web_queries_left or 0,
+        "image_credits":      credits.image_credits or 0,
+        "video_seconds_left": credits.video_seconds_left or 0,
     }
 
     return {

@@ -9,102 +9,27 @@
         "page_number": 1,
         "image_path": "assets/editor/m/hair/p1.jpg",
         "items": [
-          {
-            "slot": 1,
-            "title": "Шторки",
-            "prompt": "curtains hairstyle, middle part hair",
-            "is_premium": false
-          },
-          {
-            "slot": 2,
-            "title": "Лысый",
-            "prompt": "bald head, shaved head, skinhead",
-            "is_premium": false
-          },
-          {
-            "slot": 3,
-            "title": "Кроп",
-            "prompt": "textured crop haircut, fade",
-            "is_premium": false
-          },
-          {
-            "slot": 4,
-            "title": "Дреды",
-            "prompt": "dreadlocks hairstyle",
-            "is_premium": true
-          },
-          {
-            "slot": 5,
-            "title": "Маллет 80-х",
-            "prompt": "80s mullet hairstyle, retro hair",
-            "is_premium": true
-          },
-          {
-            "slot": 6,
-            "title": "Маллет 2000-х",
-            "prompt": "modern mullet hairstyle",
-            "is_premium": true
-          },
-          {
-            "slot": 7,
-            "title": "Длинные волосы",
-            "prompt": "long hair, flowing hair, shoulder length",
-            "is_premium": true
-          },
-          {
-            "slot": 8,
-            "title": "Ирокез",
-            "prompt": "mohawk hairstyle, punk hair",
-            "is_premium": true
-          },
-          {
-            "slot": 9,
-            "title": "Под машинку",
-            "prompt": "buzz cut, military haircut, short hair",
-            "is_premium": true
-          }
+          { "slot": 1, "title": "Шторки", "prompt": "curtains hairstyle, middle part hair", "is_premium": false },
+          { "slot": 2, "title": "Лысый", "prompt": "bald head, shaved head, skinhead", "is_premium": false },
+          { "slot": 3, "title": "Кроп", "prompt": "textured crop haircut, fade", "is_premium": false },
+          { "slot": 4, "title": "Дреды", "prompt": "dreadlocks hairstyle", "is_premium": true },
+          { "slot": 5, "title": "Маллет 80-х", "prompt": "80s mullet hairstyle, retro hair", "is_premium": true },
+          { "slot": 6, "title": "Маллет 2000-х", "prompt": "modern mullet hairstyle", "is_premium": true },
+          { "slot": 7, "title": "Длинные волосы", "prompt": "long hair, flowing hair, shoulder length", "is_premium": true },
+          { "slot": 8, "title": "Ирокез", "prompt": "mohawk hairstyle, punk hair", "is_premium": true },
+          { "slot": 9, "title": "Под машинку", "prompt": "buzz cut, military haircut, short hair", "is_premium": true }
         ]
       },
       {
         "page_number": 2,
         "image_path": "assets/editor/m/hair/p2.jpg",
         "items": [
-          {
-            "slot": 1,
-            "title": "Гаврош",
-            "prompt": "gavroche hairstyle, messy texture",
-            "is_premium": true
-          },
-          {
-            "slot": 2,
-            "title": "Помпадур",
-            "prompt": "pompadour hairstyle, rockabilly hair",
-            "is_premium": true
-          },
-          {
-            "slot": 3,
-            "title": "Андеркат",
-            "prompt": "undercut hairstyle, slicked back top",
-            "is_premium": true
-          },
-          {
-            "slot": 4,
-            "title": "Шегги",
-            "prompt": "shaggy hairstyle, messy hair",
-            "is_premium": true
-          },
-          {
-            "slot": 5,
-            "title": "Слик Бэк",
-            "prompt": "slicked back hair, mafia style hair",
-            "is_premium": true
-          },
-          {
-            "slot": 6,
-            "title": "Кудри",
-            "prompt": "curly hair, perm hairstyle",
-            "is_premium": true
-          }
+          { "slot": 1, "title": "Гаврош", "prompt": "gavroche hairstyle, messy texture", "is_premium": true },
+          { "slot": 2, "title": "Помпадур", "prompt": "pompadour hairstyle, rockabilly hair", "is_premium": true },
+          { "slot": 3, "title": "Андеркат", "prompt": "undercut hairstyle, slicked back top", "is_premium": true },
+          { "slot": 4, "title": "Шегги", "prompt": "shaggy hairstyle, messy hair", "is_premium": true },
+          { "slot": 5, "title": "Слик Бэк", "prompt": "slicked back hair, mafia style hair", "is_premium": true },
+          { "slot": 6, "title": "Кудри", "prompt": "curly hair, perm hairstyle", "is_premium": true }
         ]
       }
     ]
@@ -119,60 +44,15 @@
         "page_number": 1,
         "image_path": "assets/editor/m/color/p1.jpg",
         "items": [
-          {
-            "slot": 1,
-            "title": "Светлый",
-            "prompt": "blonde hair color",
-            "is_premium": false
-          },
-          {
-            "slot": 2,
-            "title": "Неоново-синий",
-            "prompt": "neon blue hair dye",
-            "is_premium": false
-          },
-          {
-            "slot": 3,
-            "title": "Рыжий",
-            "prompt": "ginger hair, red hair",
-            "is_premium": true
-          },
-          {
-            "slot": 4,
-            "title": "Черный",
-            "prompt": "black hair color",
-            "is_premium": true
-          },
-          {
-            "slot": 5,
-            "title": "Кислотно-зеленый",
-            "prompt": "acid green hair dye",
-            "is_premium": true
-          },
-          {
-            "slot": 6,
-            "title": "Ярко-розовый",
-            "prompt": "hot pink hair dye",
-            "is_premium": true
-          },
-          {
-            "slot": 7,
-            "title": "Каштановый",
-            "prompt": "chestnut brown hair",
-            "is_premium": true
-          },
-          {
-            "slot": 8,
-            "title": "Красный",
-            "prompt": "deep red hair dye",
-            "is_premium": true
-          },
-          {
-            "slot": 9,
-            "title": "Серебристый",
-            "prompt": "silver grey hair, platinum blonde",
-            "is_premium": true
-          }
+          { "slot": 1, "title": "Светлый", "prompt": "blonde hair color", "is_premium": false },
+          { "slot": 2, "title": "Неоново-синий", "prompt": "neon blue hair dye", "is_premium": false },
+          { "slot": 3, "title": "Рыжий", "prompt": "ginger hair, red hair", "is_premium": true },
+          { "slot": 4, "title": "Черный", "prompt": "black hair color", "is_premium": true },
+          { "slot": 5, "title": "Кислотно-зеленый", "prompt": "acid green hair dye", "is_premium": true },
+          { "slot": 6, "title": "Ярко-розовый", "prompt": "hot pink hair dye", "is_premium": true },
+          { "slot": 7, "title": "Каштановый", "prompt": "chestnut brown hair", "is_premium": true },
+          { "slot": 8, "title": "Красный", "prompt": "deep red hair dye", "is_premium": true },
+          { "slot": 9, "title": "Серебристый", "prompt": "silver grey hair, platinum blonde", "is_premium": true }
         ]
       }
     ]
@@ -187,42 +67,12 @@
         "page_number": 1,
         "image_path": "assets/editor/m/beard/p1.jpg",
         "items": [
-          {
-            "slot": 1,
-            "title": "Средняя борода",
-            "prompt": "medium full beard",
-            "is_premium": false
-          },
-          {
-            "slot": 2,
-            "title": "Средняя щетина",
-            "prompt": "medium stubble beard",
-            "is_premium": true
-          },
-          {
-            "slot": 3,
-            "title": "Короткая борода",
-            "prompt": "short boxed beard",
-            "is_premium": true
-          },
-          {
-            "slot": 4,
-            "title": "Небритость",
-            "prompt": "light stubble, 3 day beard",
-            "is_premium": true
-          },
-          {
-            "slot": 5,
-            "title": "Длинная борода",
-            "prompt": "long full beard, lumberjack beard",
-            "is_premium": true
-          },
-          {
-            "slot": 6,
-            "title": "Эспаньолка",
-            "prompt": "goatee beard",
-            "is_premium": true
-          }
+          { "slot": 1, "title": "Средняя борода", "prompt": "medium full beard", "is_premium": false },
+          { "slot": 2, "title": "Средняя щетина", "prompt": "medium stubble beard", "is_premium": true },
+          { "slot": 3, "title": "Короткая борода", "prompt": "short boxed beard", "is_premium": true },
+          { "slot": 4, "title": "Небритость", "prompt": "light stubble, 3 day beard", "is_premium": true },
+          { "slot": 5, "title": "Длинная борода", "prompt": "long full beard, lumberjack beard", "is_premium": true },
+          { "slot": 6, "title": "Эспаньолка", "prompt": "goatee beard", "is_premium": true }
         ]
       }
     ]
@@ -237,42 +87,12 @@
         "page_number": 1,
         "image_path": "assets/editor/m/moustache/p1.jpg",
         "items": [
-          {
-            "slot": 1,
-            "title": "Щеточка",
-            "prompt": "toothbrush mustache",
-            "is_premium": false
-          },
-          {
-            "slot": 2,
-            "title": "Подкова",
-            "prompt": "horseshoe mustache",
-            "is_premium": true
-          },
-          {
-            "slot": 3,
-            "title": "Закрученные",
-            "prompt": "handlebar mustache",
-            "is_premium": true
-          },
-          {
-            "slot": 4,
-            "title": "Морж",
-            "prompt": "walrus mustache, thick mustache",
-            "is_premium": true
-          },
-          {
-            "slot": 5,
-            "title": "Натуральные",
-            "prompt": "natural chevron mustache",
-            "is_premium": true
-          },
-          {
-            "slot": 6,
-            "title": "Зорро",
-            "prompt": "pencil mustache, thin mustache",
-            "is_premium": true
-          }
+          { "slot": 1, "title": "Щеточка", "prompt": "toothbrush mustache", "is_premium": false },
+          { "slot": 2, "title": "Подкова", "prompt": "horseshoe mustache", "is_premium": true },
+          { "slot": 3, "title": "Закрученные", "prompt": "handlebar mustache", "is_premium": true },
+          { "slot": 4, "title": "Морж", "prompt": "walrus mustache, thick mustache", "is_premium": true },
+          { "slot": 5, "title": "Натуральные", "prompt": "natural chevron mustache", "is_premium": true },
+          { "slot": 6, "title": "Зорро", "prompt": "pencil mustache, thin mustache", "is_premium": true }
         ]
       }
     ]
@@ -287,30 +107,10 @@
         "page_number": 1,
         "image_path": "assets/editor/m/glasses/p1.jpg",
         "items": [
-          {
-            "slot": 1,
-            "title": "Черная оправа",
-            "prompt": "black rimmed eyeglasses",
-            "is_premium": false
-          },
-          {
-            "slot": 2,
-            "title": "Спортивные",
-            "prompt": "sport sunglasses, fast glasses",
-            "is_premium": true
-          },
-          {
-            "slot": 3,
-            "title": "Хипстерские",
-            "prompt": "transparent frame glasses, hipster glasses",
-            "is_premium": true
-          },
-          {
-            "slot": 4,
-            "title": "Круглые винтажные",
-            "prompt": "round tortoise shell glasses, vintage style",
-            "is_premium": true
-          }
+          { "slot": 1, "title": "Черная оправа", "prompt": "black rimmed eyeglasses", "is_premium": false },
+          { "slot": 2, "title": "Спортивные", "prompt": "sport sunglasses, fast glasses", "is_premium": true },
+          { "slot": 3, "title": "Хипстерские", "prompt": "transparent frame glasses, hipster glasses", "is_premium": true },
+          { "slot": 4, "title": "Круглые винтажные", "prompt": "round tortoise shell glasses, vintage style", "is_premium": true }
         ]
       }
     ]
@@ -325,60 +125,15 @@
         "page_number": 1,
         "image_path": "assets/editor/m/piercing/p1.jpg",
         "items": [
-          {
-            "slot": 1,
-            "title": "Туннели",
-            "prompt": "ear gauges, ear tunnels piercing",
-            "is_premium": false
-          },
-          {
-            "slot": 2,
-            "title": "Бровь",
-            "prompt": "eyebrow piercing ring",
-            "is_premium": false
-          },
-          {
-            "slot": 3,
-            "title": "Кольцо (правое)",
-            "prompt": "right ear ring piercing",
-            "is_premium": true
-          },
-          {
-            "slot": 4,
-            "title": "Кольца (оба уха)",
-            "prompt": "earrings in both ears",
-            "is_premium": true
-          },
-          {
-            "slot": 5,
-            "title": "Кольцо (левое)",
-            "prompt": "left ear ring piercing",
-            "is_premium": true
-          },
-          {
-            "slot": 6,
-            "title": "Нос (сбоку)",
-            "prompt": "nose stud piercing",
-            "is_premium": true
-          },
-          {
-            "slot": 7,
-            "title": "Нос (септум)",
-            "prompt": "septum nose ring",
-            "is_premium": true
-          },
-          {
-            "slot": 8,
-            "title": "Губа (сбоку)",
-            "prompt": "lip ring piercing side",
-            "is_premium": true
-          },
-          {
-            "slot": 9,
-            "title": "Снейк байтс",
-            "prompt": "snake bites lip piercing",
-            "is_premium": true
-          }
+          { "slot": 1, "title": "Туннели", "prompt": "ear gauges, ear tunnels piercing", "is_premium": false },
+          { "slot": 2, "title": "Бровь", "prompt": "eyebrow piercing ring", "is_premium": false },
+          { "slot": 3, "title": "Кольцо (правое)", "prompt": "right ear ring piercing", "is_premium": true },
+          { "slot": 4, "title": "Кольца (оба уха)", "prompt": "earrings in both ears", "is_premium": true },
+          { "slot": 5, "title": "Кольцо (левое)", "prompt": "left ear ring piercing", "is_premium": true },
+          { "slot": 6, "title": "Нос (сбоку)", "prompt": "nose stud piercing", "is_premium": true },
+          { "slot": 7, "title": "Нос (септум)", "prompt": "septum nose ring", "is_premium": true },
+          { "slot": 8, "title": "Губа (сбоку)", "prompt": "lip ring piercing side", "is_premium": true },
+          { "slot": 9, "title": "Снейк байтс", "prompt": "snake bites lip piercing", "is_premium": true }
         ]
       }
     ]
@@ -393,180 +148,45 @@
         "page_number": 1,
         "image_path": "assets/shoots/sets/p1.jpg",
         "items": [
-          {
-            "slot": 1,
-            "title": "ЧБ в метро",
-            "prompt": "black and white photography, man standing in subway train, depth of field, cinematic lighting",
-            "is_premium": false
-          },
-          {
-            "slot": 2,
-            "title": "Майами",
-            "prompt": "man wearing hawaiian shirt and shorts, standing on miami beach, palm trees, sunny day",
-            "is_premium": false
-          },
-          {
-            "slot": 3,
-            "title": "Дождь",
-            "prompt": "portrait of a man in heavy rain, wet face, dramatic night lighting, cinematic",
-            "is_premium": false
-          },
-          {
-            "slot": 4,
-            "title": "Пол-лица в воде",
-            "prompt": "artistic photo, man face half submerged in calm water, reflection, b&w",
-            "is_premium": true
-          },
-          {
-            "slot": 5,
-            "title": "В толпе",
-            "prompt": "man standing in a busy crowd in subway station, long exposure motion blur people around, focus on subject",
-            "is_premium": true
-          },
-          {
-            "slot": 6,
-            "title": "Рамен",
-            "prompt": "man eating ramen noodles in japanese restaurant, chopsticks, steam, neon lights",
-            "is_premium": true
-          },
-          {
-            "slot": 7,
-            "title": "Прожектор",
-            "prompt": "studio portrait, man illuminated by a round spotlight beam, dramatic shadows",
-            "is_premium": true
-          },
-          {
-            "slot": 8,
-            "title": "Вагон метро",
-            "prompt": "man standing inside subway car, perspective view, urban style",
-            "is_premium": true
-          },
-          {
-            "slot": 9,
-            "title": "Буря",
-            "prompt": "man standing on a cliff edge, stormy sea, dark clouds, epic atmosphere",
-            "is_premium": true
-          }
+          { "slot": 1, "title": "ЧБ в метро", "prompt": "black and white photography, man standing in subway train, depth of field, cinematic lighting", "is_premium": false },
+          { "slot": 2, "title": "Майами", "prompt": "man wearing hawaiian shirt and shorts, standing on miami beach, palm trees, sunny day", "is_premium": false },
+          { "slot": 3, "title": "Дождь", "prompt": "portrait of a man in heavy rain, wet face, dramatic night lighting, cinematic", "is_premium": false },
+          { "slot": 4, "title": "Пол-лица в воде", "prompt": "artistic photo, man face half submerged in calm water, reflection, b&w", "is_premium": true },
+          { "slot": 5, "title": "В толпе", "prompt": "man standing in a busy crowd in subway station, long exposure motion blur people around, focus on subject", "is_premium": true },
+          { "slot": 6, "title": "Рамен", "prompt": "man eating ramen noodles in japanese restaurant, chopsticks, steam, neon lights", "is_premium": true },
+          { "slot": 7, "title": "Прожектор", "prompt": "studio portrait, man illuminated by a round spotlight beam, dramatic shadows", "is_premium": true },
+          { "slot": 8, "title": "Вагон метро", "prompt": "man standing inside subway car, perspective view, urban style", "is_premium": true },
+          { "slot": 9, "title": "Буря", "prompt": "man standing on a cliff edge, stormy sea, dark clouds, epic atmosphere", "is_premium": true }
         ]
       },
       {
         "page_number": 2,
         "image_path": "assets/shoots/sets/p2.jpg",
         "items": [
-          {
-            "slot": 1,
-            "title": "В зеркале",
-            "prompt": "man in suit looking into a vintage mirror, reflection, noir atmosphere",
-            "is_premium": true
-          },
-          {
-            "slot": 2,
-            "title": "Кинопортрет",
-            "prompt": "cinematic portrait of a man, dramatic red background, studio lighting",
-            "is_premium": true
-          },
-          {
-            "slot": 3,
-            "title": "Нуар-портрет",
-            "prompt": "film noir style portrait, shadow of blinds on face, black and white",
-            "is_premium": true
-          },
-          {
-            "slot": 4,
-            "title": "Ночной город",
-            "prompt": "man sitting in a car at night, rain on window, bokeh city lights, synthwave vibe",
-            "is_premium": true
-          },
-          {
-            "slot": 5,
-            "title": "Смарт-кэжуал",
-            "prompt": "man leaning on orange wall, wearing beige coat and sweater, fashion photography",
-            "is_premium": true
-          },
-          {
-            "slot": 6,
-            "title": "Минимализм",
-            "prompt": "man sitting on a chair, all white background, minimalist fashion photography, b&w",
-            "is_premium": true
-          },
-          {
-            "slot": 7,
-            "title": "Элегантный монохром",
-            "prompt": "elegant b&w portrait, man smiling with hands clasped, studio grey background",
-            "is_premium": true
-          },
-          {
-            "slot": 8,
-            "title": "Закат",
-            "prompt": "man standing against a wall with sunset shadows, golden hour lighting",
-            "is_premium": true
-          },
-          {
-            "slot": 9,
-            "title": "Урбан",
-            "prompt": "man standing in the middle of a busy street, motion blur crowd, high angle shot",
-            "is_premium": true
-          }
+          { "slot": 1, "title": "В зеркале", "prompt": "man in suit looking into a vintage mirror, reflection, noir atmosphere", "is_premium": true },
+          { "slot": 2, "title": "Кинопортрет", "prompt": "cinematic portrait of a man, dramatic red background, studio lighting", "is_premium": true },
+          { "slot": 3, "title": "Нуар-портрет", "prompt": "film noir style portrait, shadow of blinds on face, black and white", "is_premium": true },
+          { "slot": 4, "title": "Ночной город", "prompt": "man sitting in a car at night, rain on window, bokeh city lights, synthwave vibe", "is_premium": true },
+          { "slot": 5, "title": "Смарт-кэжуал", "prompt": "man leaning on orange wall, wearing beige coat and sweater, fashion photography", "is_premium": true },
+          { "slot": 6, "title": "Минимализм", "prompt": "man sitting on a chair, all white background, minimalist fashion photography, b&w", "is_premium": true },
+          { "slot": 7, "title": "Элегантный монохром", "prompt": "elegant b&w portrait, man smiling with hands clasped, studio grey background", "is_premium": true },
+          { "slot": 8, "title": "Закат", "prompt": "man standing against a wall with sunset shadows, golden hour lighting", "is_premium": true },
+          { "slot": 9, "title": "Урбан", "prompt": "man standing in the middle of a busy street, motion blur crowd, high angle shot", "is_premium": true }
         ]
       },
       {
         "page_number": 3,
         "image_path": "assets/shoots/sets/p3.jpg",
         "items": [
-          {
-            "slot": 1,
-            "title": "Мотопауза",
-            "prompt": "man sitting on a motorcycle, urban background, black and white photography",
-            "is_premium": true
-          },
-          {
-            "slot": 2,
-            "title": "Тень и крыло",
-            "prompt": "dark portrait of a man with a black crow on shoulder, gothic atmosphere",
-            "is_premium": true
-          },
-          {
-            "slot": 3,
-            "title": "Теплый сад",
-            "prompt": "man leaning on a stone wall in a garden, greenery, soft sunlight",
-            "is_premium": true
-          },
-          {
-            "slot": 4,
-            "title": "Тихий уют",
-            "prompt": "man sitting in a wicker chair, beige interior, relaxed atmosphere",
-            "is_premium": true
-          },
-          {
-            "slot": 5,
-            "title": "Ретро портрет",
-            "prompt": "retro 70s style portrait, man wearing patterned vest and gold chain, brown background",
-            "is_premium": true
-          },
-          {
-            "slot": 6,
-            "title": "Ночная стоянка",
-            "prompt": "man leaning on a black car at night, street lights, trees background",
-            "is_premium": true
-          },
-          {
-            "slot": 7,
-            "title": "Ночной звонок",
-            "prompt": "man talking on a payphone on a night street, cinematic lighting",
-            "is_premium": true
-          },
-          {
-            "slot": 8,
-            "title": "Солидный смокинг",
-            "prompt": "man adjusting cufflinks in a tuxedo, dark moody background, luxury style",
-            "is_premium": true
-          },
-          {
-            "slot": 9,
-            "title": "Ретро-апатия",
-            "prompt": "man sitting in a messy room with posters, vintage 90s grunge aesthetic",
-            "is_premium": true
-          }
+          { "slot": 1, "title": "Мотопауза", "prompt": "man sitting on a motorcycle, urban background, black and white photography", "is_premium": true },
+          { "slot": 2, "title": "Тень и крыло", "prompt": "dark portrait of a man with a black crow on shoulder, gothic atmosphere", "is_premium": true },
+          { "slot": 3, "title": "Теплый сад", "prompt": "man leaning on a stone wall in a garden, greenery, soft sunlight", "is_premium": true },
+          { "slot": 4, "title": "Тихий уют", "prompt": "man sitting in a wicker chair, beige interior, relaxed atmosphere", "is_premium": true },
+          { "slot": 5, "title": "Ретро портрет", "prompt": "retro 70s style portrait, man wearing patterned vest and gold chain, brown background", "is_premium": true },
+          { "slot": 6, "title": "Ночная стоянка", "prompt": "man leaning on a black car at night, street lights, trees background", "is_premium": true },
+          { "slot": 7, "title": "Ночной звонок", "prompt": "man talking on a payphone on a night street, cinematic lighting", "is_premium": true },
+          { "slot": 8, "title": "Солидный смокинг", "prompt": "man adjusting cufflinks in a tuxedo, dark moody background, luxury style", "is_premium": true },
+          { "slot": 9, "title": "Ретро-апатия", "prompt": "man sitting in a messy room with posters, vintage 90s grunge aesthetic", "is_premium": true }
         ]
       }
     ]
@@ -581,120 +201,30 @@
         "page_number": 1,
         "image_path": "assets/shoots/looks/p1.jpg",
         "items": [
-          {
-            "slot": 1,
-            "title": "Гот",
-            "prompt": "goth style man, pale skin, black makeup, gothic clothes",
-            "is_premium": false
-          },
-          {
-            "slot": 2,
-            "title": "Адидас-гопник",
-            "prompt": "slavic gopnik style, wearing adidas tracksuit and beanie, squatting",
-            "is_premium": false
-          },
-          {
-            "slot": 3,
-            "title": "Эльф",
-            "prompt": "fantasy elf man, long white hair, elven ears, fantasy clothes",
-            "is_premium": false
-          },
-          {
-            "slot": 4,
-            "title": "Ретро-хиппи",
-            "prompt": "70s hippie man, long hair, headband, colorful vest, peace sign",
-            "is_premium": true
-          },
-          {
-            "slot": 5,
-            "title": "Серфер",
-            "prompt": "surfer guy, messy wet blonde hair, tanned skin, necklace, smiling",
-            "is_premium": true
-          },
-          {
-            "slot": 6,
-            "title": "Бродяга",
-            "prompt": "homeless man style, dirty clothes, beanie, street background",
-            "is_premium": true
-          },
-          {
-            "slot": 7,
-            "title": "Корпоративный",
-            "prompt": "corporate office worker, suit and tie, glasses, professional photo",
-            "is_premium": true
-          },
-          {
-            "slot": 8,
-            "title": "Я в старости",
-            "prompt": "old man, wrinkles, gray hair, realistic aging, same face features",
-            "is_premium": true
-          },
-          {
-            "slot": 9,
-            "title": "Фото на паспорт",
-            "prompt": "biometric passport photo, neutral expression, white background, bad lighting style",
-            "is_premium": true
-          }
+          { "slot": 1, "title": "Гот", "prompt": "goth style man, pale skin, black makeup, gothic clothes", "is_premium": false },
+          { "slot": 2, "title": "Адидас-гопник", "prompt": "slavic gopnik style, wearing adidas tracksuit and beanie, squatting", "is_premium": false },
+          { "slot": 3, "title": "Эльф", "prompt": "fantasy elf man, long white hair, elven ears, fantasy clothes", "is_premium": false },
+          { "slot": 4, "title": "Ретро-хиппи", "prompt": "70s hippie man, long hair, headband, colorful vest, peace sign", "is_premium": true },
+          { "slot": 5, "title": "Серфер", "prompt": "surfer guy, messy wet blonde hair, tanned skin, necklace, smiling", "is_premium": true },
+          { "slot": 6, "title": "Бродяга", "prompt": "homeless man style, dirty clothes, beanie, street background", "is_premium": true },
+          { "slot": 7, "title": "Корпоративный", "prompt": "corporate office worker, suit and tie, glasses, professional photo", "is_premium": true },
+          { "slot": 8, "title": "Я в старости", "prompt": "old man, wrinkles, gray hair, realistic aging, same face features", "is_premium": true },
+          { "slot": 9, "title": "Фото на паспорт", "prompt": "biometric passport photo, neutral expression, white background, bad lighting style", "is_premium": true }
         ]
       },
       {
         "page_number": 2,
         "image_path": "assets/shoots/looks/p2.jpg",
         "items": [
-          {
-            "slot": 1,
-            "title": "Рок-звезда",
-            "prompt": "rock star, long messy hair, leather jacket, tattoos, attitude",
-            "is_premium": true
-          },
-          {
-            "slot": 2,
-            "title": "Рэп-исполнитель",
-            "prompt": "rap artist, cap, chains, oversized hoodie, studio background",
-            "is_premium": true
-          },
-          {
-            "slot": 3,
-            "title": "Берлинский",
-            "prompt": "berlin techno raver, bleached hair, black outfit, glasses, industrial background",
-            "is_premium": true
-          },
-          {
-            "slot": 4,
-            "title": "Комсомол",
-            "prompt": "soviet komsomol member, vintage suit, red tie, lenin pin, 1960s style",
-            "is_premium": true
-          },
-          {
-            "slot": 5,
-            "title": "Панк",
-            "prompt": "punk rocker, colorful mohawk, studded leather jacket, eyeliner",
-            "is_premium": true
-          },
-          {
-            "slot": 6,
-            "title": "Эмо",
-            "prompt": "2007 emo boy, black fringe hair covering eye, eyeliner, black hoodie",
-            "is_premium": true
-          },
-          {
-            "slot": 7,
-            "title": "Восточный стиль",
-            "prompt": "sultan, wearing green and gold traditional eastern robe, turban, rich background",
-            "is_premium": true
-          },
-          {
-            "slot": 8,
-            "title": "Я в детстве",
-            "prompt": "young boy, 8 years old, childhood portrait, same face features",
-            "is_premium": true
-          },
-          {
-            "slot": 9,
-            "title": "Викинг",
-            "prompt": "viking warrior, fur armor, braids, rugged look",
-            "is_premium": true
-          }
+          { "slot": 1, "title": "Рок-звезда", "prompt": "rock star, long messy hair, leather jacket, tattoos, attitude", "is_premium": true },
+          { "slot": 2, "title": "Рэп-исполнитель", "prompt": "rap artist, cap, chains, oversized hoodie, studio background", "is_premium": true },
+          { "slot": 3, "title": "Берлинский", "prompt": "berlin techno raver, bleached hair, black outfit, glasses, industrial background", "is_premium": true },
+          { "slot": 4, "title": "Комсомол", "prompt": "soviet komsomol member, vintage suit, red tie, lenin pin, 1960s style", "is_premium": true },
+          { "slot": 5, "title": "Панк", "prompt": "punk rocker, colorful mohawk, studded leather jacket, eyeliner", "is_premium": true },
+          { "slot": 6, "title": "Эмо", "prompt": "2007 emo boy, black fringe hair covering eye, eyeliner, black hoodie", "is_premium": true },
+          { "slot": 7, "title": "Восточный стиль", "prompt": "sultan, wearing green and gold traditional eastern robe, turban, rich background", "is_premium": true },
+          { "slot": 8, "title": "Я в детстве", "prompt": "young boy, 8 years old, childhood portrait, same face features", "is_premium": true },
+          { "slot": 9, "title": "Викинг", "prompt": "viking warrior, fur armor, braids, rugged look", "is_premium": true }
         ]
       }
     ]
@@ -709,42 +239,12 @@
         "page_number": 1,
         "image_path": "assets/shoots/winter/p1.jpg",
         "items": [
-          {
-            "slot": 1,
-            "title": "Зимний характер",
-            "prompt": "man sitting on the hood of black bmw in winter forest, snow, leather jacket",
-            "is_premium": false
-          },
-          {
-            "slot": 2,
-            "title": "Русская зима",
-            "prompt": "man in sheepskin coat and fur hat, holding tea glass, samovar on table, russian winter village",
-            "is_premium": true
-          },
-          {
-            "slot": 3,
-            "title": "Домашнее Рождество",
-            "prompt": "man sitting in armchair near christmas tree, wearing cozy beige sweater, warm lighting",
-            "is_premium": true
-          },
-          {
-            "slot": 4,
-            "title": "Зимний букет",
-            "prompt": "man holding large winter bouquet with cotton and fir branches, snowy street background",
-            "is_premium": true
-          },
-          {
-            "slot": 5,
-            "title": "Лесная свежесть",
-            "prompt": "portrait of a man in winter forest, wearing scarf and coat, snowflakes",
-            "is_premium": true
-          },
-          {
-            "slot": 6,
-            "title": "Холодные мысли",
-            "prompt": "cinematic split screen, man looking at snowy mountains landscape, cold tones",
-            "is_premium": true
-          }
+          { "slot": 1, "title": "Зимний характер", "prompt": "man sitting on the hood of black bmw in winter forest, snow, leather jacket", "is_premium": false },
+          { "slot": 2, "title": "Русская зима", "prompt": "man in sheepskin coat and fur hat, holding tea glass, samovar on table, russian winter village", "is_premium": true },
+          { "slot": 3, "title": "Домашнее Рождество", "prompt": "man sitting in armchair near christmas tree, wearing cozy beige sweater, warm lighting", "is_premium": true },
+          { "slot": 4, "title": "Зимний букет", "prompt": "man holding large winter bouquet with cotton and fir branches, snowy street background", "is_premium": true },
+          { "slot": 5, "title": "Лесная свежесть", "prompt": "portrait of a man in winter forest, wearing scarf and coat, snowflakes", "is_premium": true },
+          { "slot": 6, "title": "Холодные мысли", "prompt": "cinematic split screen, man looking at snowy mountains landscape, cold tones", "is_premium": true }
         ]
       }
     ]
@@ -759,30 +259,291 @@
         "page_number": 1,
         "image_path": "assets/shoots/trends/p1.jpg",
         "items": [
-          {
-            "slot": 1,
-            "title": "Зимняя тишина",
-            "prompt": "collage of 3 photos, man in winter forest, blue tones, scarf",
-            "is_premium": false
-          },
-          {
-            "slot": 2,
-            "title": "Снегопад",
-            "prompt": "collage of 3 photos, man holding transparent umbrella in heavy snow",
-            "is_premium": true
-          },
-          {
-            "slot": 3,
-            "title": "В галерее",
-            "prompt": "man face as a painting in art gallery, museum lighting",
-            "is_premium": true
-          },
-          {
-            "slot": 4,
-            "title": "В галерее (со зрителем)",
-            "prompt": "man face as a large painting in art gallery, viewed by a person from back",
-            "is_premium": true
-          }
+          { "slot": 1, "title": "Зимняя тишина", "prompt": "collage of 3 photos, man in winter forest, blue tones, scarf", "is_premium": false },
+          { "slot": 2, "title": "Снегопад", "prompt": "collage of 3 photos, man holding transparent umbrella in heavy snow", "is_premium": true },
+          { "slot": 3, "title": "В галерее", "prompt": "man face as a painting in art gallery, museum lighting", "is_premium": true },
+          { "slot": 4, "title": "В галерее (со зрителем)", "prompt": "man face as a large painting in art gallery, viewed by a person from back", "is_premium": true }
+        ]
+      }
+    ]
+  },
+  {
+    "slug": "hair",
+    "type": "editor",
+    "gender": "f",
+    "title_ru": "Прическа",
+    "pages": [
+      {
+        "page_number": 1,
+        "image_path": "assets/editor/f/hair/p1.jpg",
+        "items": [
+          { "slot": 1, "title": "Боб", "prompt": "classic soft bob hairstyle", "is_premium": false },
+          { "slot": 2, "title": "Хвост", "prompt": "slicked back ponytail hairstyle", "is_premium": false },
+          { "slot": 3, "title": "Под машинку", "prompt": "buzz cut hairstyle for woman, short hair", "is_premium": false },
+          { "slot": 4, "title": "Маллет 2000-х", "prompt": "modern mullet hairstyle woman", "is_premium": true },
+          { "slot": 5, "title": "Дреды", "prompt": "dreadlocks hairstyle woman", "is_premium": true },
+          { "slot": 6, "title": "Афро-косы", "prompt": "afro braids hairstyle", "is_premium": true },
+          { "slot": 7, "title": "Пикси", "prompt": "pixie cut hairstyle", "is_premium": true },
+          { "slot": 8, "title": "Каре", "prompt": "sharp bob haircut with bangs, kare style", "is_premium": true },
+          { "slot": 9, "title": "Зачесанные назад", "prompt": "slicked back short hair woman", "is_premium": true }
+        ]
+      },
+      {
+        "page_number": 2,
+        "image_path": "assets/editor/f/hair/p2.jpg",
+        "items": [
+          { "slot": 1, "title": "Длинные волнистые", "prompt": "long wavy hair", "is_premium": true },
+          { "slot": 2, "title": "Каскад", "prompt": "layered cascade haircut", "is_premium": true },
+          { "slot": 3, "title": "Шегги", "prompt": "shaggy hairstyle woman", "is_premium": true },
+          { "slot": 4, "title": "В стиле 90-х", "prompt": "90s voluminous blowout hair", "is_premium": true },
+          { "slot": 5, "title": "Пучок с челкой", "prompt": "messy bun with bangs", "is_premium": true },
+          { "slot": 6, "title": "Французский боб", "prompt": "french bob hairstyle", "is_premium": true },
+          { "slot": 7, "title": "Две косы", "prompt": "two braided pigtails", "is_premium": true },
+          { "slot": 8, "title": "Волчица", "prompt": "wolf cut hairstyle", "is_premium": true },
+          { "slot": 9, "title": "Кудри", "prompt": "curly hair, perm", "is_premium": true }
+        ]
+      }
+    ]
+  },
+  {
+    "slug": "color",
+    "type": "editor",
+    "gender": "f",
+    "title_ru": "Цвет волос",
+    "pages": [
+      {
+        "page_number": 1,
+        "image_path": "assets/editor/f/color/p1.jpg",
+        "items": [
+          { "slot": 1, "title": "Светлый", "prompt": "blonde hair color", "is_premium": false },
+          { "slot": 2, "title": "Неоново-синий", "prompt": "neon blue hair dye", "is_premium": false },
+          { "slot": 3, "title": "Рыжий", "prompt": "ginger hair, red hair", "is_premium": true },
+          { "slot": 4, "title": "Черный", "prompt": "black hair color", "is_premium": true },
+          { "slot": 5, "title": "Кислотно-зеленый", "prompt": "acid green hair dye", "is_premium": true },
+          { "slot": 6, "title": "Ярко-розовый", "prompt": "hot pink hair dye", "is_premium": true },
+          { "slot": 7, "title": "Каштановый", "prompt": "chestnut brown hair", "is_premium": true },
+          { "slot": 8, "title": "Красный", "prompt": "deep red hair dye", "is_premium": true },
+          { "slot": 9, "title": "Серебристый", "prompt": "silver grey hair, platinum blonde", "is_premium": true }
+        ]
+      }
+    ]
+  },
+  {
+    "slug": "makeup",
+    "type": "editor",
+    "gender": "f",
+    "title_ru": "Макияж",
+    "pages": [
+      {
+        "page_number": 1,
+        "image_path": "assets/editor/f/makeup/p1.jpg",
+        "items": [
+          { "slot": 1, "title": "Южнокорейский", "prompt": "soft korean style makeup, peach tones, gradient lips", "is_premium": false },
+          { "slot": 2, "title": "Вечерний", "prompt": "evening makeup, dark lipstick, smokey eyes", "is_premium": true },
+          { "slot": 3, "title": "Глянцевый", "prompt": "glossy skin makeup, glass skin, lip gloss", "is_premium": true },
+          { "slot": 4, "title": "Фестивальный", "prompt": "euphoria style makeup, colorful eyeliner, glitter", "is_premium": true },
+          { "slot": 5, "title": "Французский", "prompt": "french girl makeup, red lipstick, natural eyes", "is_premium": true },
+          { "slot": 6, "title": "Легкий дневной", "prompt": "no makeup makeup look, fresh face", "is_premium": true }
+        ]
+      }
+    ]
+  },
+  {
+    "slug": "piercing",
+    "type": "editor",
+    "gender": "f",
+    "title_ru": "Пирсинг",
+    "pages": [
+      {
+        "page_number": 1,
+        "image_path": "assets/editor/f/piercing/p1.jpg",
+        "items": [
+          { "slot": 1, "title": "Гвоздики", "prompt": "stud earrings", "is_premium": false },
+          { "slot": 2, "title": "Туннели", "prompt": "ear gauges, tunnels", "is_premium": true },
+          { "slot": 3, "title": "Бровь", "prompt": "eyebrow piercing", "is_premium": true },
+          { "slot": 4, "title": "Нос (сбоку)", "prompt": "nose stud piercing", "is_premium": true },
+          { "slot": 5, "title": "Нос (септум)", "prompt": "septum nose ring", "is_premium": true },
+          { "slot": 6, "title": "Губа (сбоку)", "prompt": "lip ring piercing side", "is_premium": true }
+        ]
+      }
+    ]
+  },
+  {
+    "slug": "glasses",
+    "type": "editor",
+    "gender": "f",
+    "title_ru": "Очки",
+    "pages": [
+      {
+        "page_number": 1,
+        "image_path": "assets/editor/f/glasses/p1.jpg",
+        "items": [
+          { "slot": 1, "title": "Черная оправа", "prompt": "black rimmed eyeglasses", "is_premium": false },
+          { "slot": 2, "title": "Спортивные очки", "prompt": "sport sunglasses, fast glasses", "is_premium": true },
+          { "slot": 3, "title": "Хипстерские", "prompt": "transparent frame glasses", "is_premium": true },
+          { "slot": 4, "title": "Круглые винтажные", "prompt": "round tortoise shell glasses", "is_premium": true }
+        ]
+      }
+    ]
+  },
+  {
+    "slug": "winter",
+    "type": "shoot",
+    "gender": "f",
+    "title_ru": "Зимние стили",
+    "pages": [
+      {
+        "page_number": 1,
+        "image_path": "assets/shoots/f/winter/p1.jpg",
+        "items": [
+          { "slot": 1, "title": "Зимняя Москва", "prompt": "girl on Red Square background in winter, wearing ushanka hat, holding fir branches", "is_premium": false },
+          { "slot": 2, "title": "Жёлтая сказка", "prompt": "girl wearing bright yellow fur coat, christmas street background", "is_premium": true },
+          { "slot": 3, "title": "Русская зима", "prompt": "girl in white fur coat and red scarf, holding samovar with bagels, russian winter forest", "is_premium": true },
+          { "slot": 4, "title": "Хозяйка леса", "prompt": "woman riding a brown bear in snowy forest, wearing white fur coat, fantasy photography", "is_premium": true },
+          { "slot": 5, "title": "Сладкая компания", "prompt": "girl in cozy room surrounded by giant m&m characters", "is_premium": true },
+          { "slot": 6, "title": "Алые ягоды", "prompt": "girl in white fur coat holding branches with red berries, snowy forest", "is_premium": true },
+          { "slot": 7, "title": "Дорога в снегу", "prompt": "girl walking husky dog on a snowy road, red car in background", "is_premium": true },
+          { "slot": 8, "title": "Сердце зимы", "prompt": "snow queen fantasy portrait, ice dress, frozen atmosphere", "is_premium": true },
+          { "slot": 9, "title": "Сладкий домик", "prompt": "girl sitting in a pink gingerbread house, holding cotton candy", "is_premium": true }
+        ]
+      },
+      {
+        "page_number": 2,
+        "image_path": "assets/shoots/f/winter/p2.jpg",
+        "items": [
+          { "slot": 1, "title": "Праздничный вкус", "prompt": "girl in green beanie holding gingerbread man cookie, outdoor christmas market", "is_premium": true },
+          { "slot": 2, "title": "Холодное озеро", "prompt": "girl sitting on frozen ice of lake baikal, red jumpsuit", "is_premium": true },
+          { "slot": 3, "title": "Ледяная королева", "prompt": "ice queen portrait, white hair, silver crown, frozen makeup", "is_premium": true },
+          { "slot": 4, "title": "Следуй за мной", "prompt": "follow me style photo, girl holding hand leading to snowy mountains", "is_premium": true },
+          { "slot": 5, "title": "Новогодний вечер", "prompt": "elegant girl in black dress, christmas tree background, indoor evening lighting", "is_premium": true },
+          { "slot": 6, "title": "Зимний взгляд", "prompt": "close up portrait of a girl in snowy forest, snowflakes on eyelashes", "is_premium": true },
+          { "slot": 7, "title": "Зимние ромашки", "prompt": "surreal collage, girl in winter clothes holding summer daisy flowers, split season background", "is_premium": true },
+          { "slot": 8, "title": "Пауза в пути", "prompt": "girl standing near car in winter forest, holding coffee cup, white fur coat", "is_premium": true },
+          { "slot": 9, "title": "Зимняя гармония", "prompt": "soft portrait of a girl in white knitted scarf, snowy forest background", "is_premium": true }
+        ]
+      },
+      {
+        "page_number": 3,
+        "image_path": "assets/shoots/f/winter/p3.jpg",
+        "items": [
+          { "slot": 1, "title": "Зимний гламур", "prompt": "fashion photography, girl in white fur coat and sunglasses, luxury winter style", "is_premium": true },
+          { "slot": 2, "title": "Новогодний шарм", "prompt": "girl standing near black door with christmas wreaths, wearing beige coat", "is_premium": true },
+          { "slot": 3, "title": "Праздничный миг", "prompt": "girl in brown teddy coat holding gift box, garland lights background", "is_premium": true },
+          { "slot": 4, "title": "Зимняя муза", "prompt": "girl in vintage white lace dress, holding red bird, snowy forest background", "is_premium": true }
+        ]
+      }
+    ]
+  },
+  {
+    "slug": "sets",
+    "type": "shoot",
+    "gender": "f",
+    "title_ru": "Фотосеты",
+    "pages": [
+      {
+        "page_number": 1,
+        "image_path": "assets/shoots/f/sets/p1.jpg",
+        "items": [
+          { "slot": 1, "title": "Гонконг 90-х", "prompt": "wong kar wai style, girl in vintage dress, moody lighting, film grain", "is_premium": false },
+          { "slot": 2, "title": "Нео-вестерн", "prompt": "girl wearing cowboy hat and boots, sitting on floor, studio background", "is_premium": false },
+          { "slot": 3, "title": "Золотой свет", "prompt": "portrait with hard sunlight shadow strip on face, golden hour", "is_premium": false },
+          { "slot": 4, "title": "ЧБ с очками", "prompt": "black and white studio portrait, girl wearing glasses, smart look", "is_premium": true },
+          { "slot": 5, "title": "В метро", "prompt": "girl standing in subway station, motion blur train background", "is_premium": true },
+          { "slot": 6, "title": "Гламур в черном", "prompt": "girl in black evening dress and gloves, spotlight circle background, b&w", "is_premium": true },
+          { "slot": 7, "title": "Токио гранж", "prompt": "girl sitting in a graffiti car, neon lights, cyberpunk street background", "is_premium": true },
+          { "slot": 8, "title": "Французский шик", "prompt": "girl wearing red beret and black blazer, red lipstick, fashion portrait", "is_premium": true },
+          { "slot": 9, "title": "Цветы и поезд", "prompt": "girl standing near retro train holding bouquet of red flowers", "is_premium": true }
+        ]
+      },
+      {
+        "page_number": 2,
+        "image_path": "assets/shoots/f/sets/p2.jpg",
+        "items": [
+          { "slot": 1, "title": "В поле", "prompt": "girl in white dress standing in chamomile field, sunny summer day", "is_premium": true },
+          { "slot": 2, "title": "В бассейне", "prompt": "girl in pool, sunset lighting, wet hair, luxury resort vibe", "is_premium": true },
+          { "slot": 3, "title": "Монохромные волны", "prompt": "black and white photo, girl in bikini standing in ocean waves", "is_premium": true },
+          { "slot": 4, "title": "Погружение", "prompt": "creative portrait, face half underwater, distortion, cinematic lighting", "is_premium": true },
+          { "slot": 5, "title": "Из окна", "prompt": "girl looking out of car window, night city bokeh background", "is_premium": true },
+          { "slot": 6, "title": "Ромашки", "prompt": "girl in pink sweater holding daisies, blue sky background, low angle shot", "is_premium": true },
+          { "slot": 7, "title": "Мокрый эффект", "prompt": "beauty portrait, wet hair look, fresh skin, studio lighting", "is_premium": true },
+          { "slot": 8, "title": "Цветочный портрет", "prompt": "girl with large flower in hair, soft beauty lighting, beige tones", "is_premium": true },
+          { "slot": 9, "title": "Ретро-нуар", "prompt": "girl smoking cigarette in dark room, film noir style, vintage atmosphere", "is_premium": true }
+        ]
+      },
+      {
+        "page_number": 3,
+        "image_path": "assets/shoots/f/sets/p3.jpg",
+        "items": [
+          { "slot": 1, "title": "Теплый вечер", "prompt": "girl sitting on bed, cozy home atmosphere, warm lamp light", "is_premium": true },
+          { "slot": 2, "title": "В зеркале", "prompt": "mirror selfie style, sun flare, golden hour, aesthetic", "is_premium": true },
+          { "slot": 3, "title": "Московский шик", "prompt": "girl in black fur coat holding bag of oranges, red square background", "is_premium": true },
+          { "slot": 4, "title": "Первые лучи", "prompt": "girl waking up in bed, morning sunlight, soft linen", "is_premium": true },
+          { "slot": 5, "title": "Облачный гламур", "prompt": "pop art style, girl in green dress surrounded by cotton clouds on pink background", "is_premium": true },
+          { "slot": 6, "title": "Темная муза", "prompt": "black and white fashion shot, girl sitting on chair, blazer, tights", "is_premium": true },
+          { "slot": 7, "title": "Лес в огне", "prompt": "artistic portrait, burning forest background, orange lighting, dramatic", "is_premium": true },
+          { "slot": 8, "title": "Световой ореол", "prompt": "silhouette portrait with rim lighting, dark background, glowing hair", "is_premium": true },
+          { "slot": 9, "title": "Ночной полароид", "prompt": "polaroid frame style, flash photography, girl at night street", "is_premium": true }
+        ]
+      }
+    ]
+  },
+  {
+    "slug": "looks",
+    "type": "shoot",
+    "gender": "f",
+    "title_ru": "Готовые образы",
+    "pages": [
+      {
+        "page_number": 1,
+        "image_path": "assets/shoots/f/looks/p1.jpg",
+        "items": [
+          { "slot": 1, "title": "Гот", "prompt": "goth girl, pale skin, black lipstick, gothic clothes", "is_premium": false },
+          { "slot": 2, "title": "Адидас-гопник", "prompt": "slavic gopnik girl, adidas tracksuit, flat cap", "is_premium": false },
+          { "slot": 3, "title": "Эльф", "prompt": "fantasy elf girl, elven ears, tiara, green cloak", "is_premium": false },
+          { "slot": 4, "title": "Ретро-хиппи", "prompt": "70s hippie girl, glasses, headband, boho style", "is_premium": true },
+          { "slot": 5, "title": "Серфер", "prompt": "surfer girl, tanned skin, wet blonde bob hair, sunglasses on head", "is_premium": true },
+          { "slot": 6, "title": "Бродяга", "prompt": "homeless style, layered dirty clothes, messy hair, street background", "is_premium": true },
+          { "slot": 7, "title": "Корпоративный", "prompt": "corporate business woman, suit, glasses, office background", "is_premium": true },
+          { "slot": 8, "title": "Я в старости", "prompt": "old woman, gray hair, wrinkles, glasses, realistic aging", "is_premium": true },
+          { "slot": 9, "title": "Фото на паспорт", "prompt": "biometric passport photo, neutral expression, white background, bad lighting", "is_premium": true }
+        ]
+      },
+      {
+        "page_number": 2,
+        "image_path": "assets/shoots/f/looks/p2.jpg",
+        "items": [
+          { "slot": 1, "title": "Рок-звезда", "prompt": "rock star girl, leather jacket, messy hair, attitude", "is_premium": true },
+          { "slot": 2, "title": "Рэп-исполнитель", "prompt": "rap artist girl, beanie, oversized hoodie, chains", "is_premium": true },
+          { "slot": 3, "title": "Берлинский", "prompt": "berlin techno style, short bleached hair, glasses, black hoodie", "is_premium": true },
+          { "slot": 4, "title": "Комсомол", "prompt": "soviet komsomol girl, white shirt, red tie, pin, vintage style", "is_premium": true },
+          { "slot": 5, "title": "Панк", "prompt": "punk girl, colorful mohawk, studded leather jacket", "is_premium": true },
+          { "slot": 6, "title": "Эмо", "prompt": "2007 emo girl, black hair with red streak, eyeliner, hoodie", "is_premium": true },
+          { "slot": 7, "title": "Восточный стиль", "prompt": "ottoman sultana style, green velvet dress, turban, jewelry", "is_premium": true },
+          { "slot": 8, "title": "Я в детстве", "prompt": "little girl, 8 years old, cute smile, childhood photo", "is_premium": true },
+          { "slot": 9, "title": "Викинг", "prompt": "viking shieldmaiden, fur armor, braids, rugged look", "is_premium": true }
+        ]
+      }
+    ]
+  },
+  {
+    "slug": "trends",
+    "type": "shoot",
+    "gender": "f",
+    "title_ru": "Тренды",
+    "pages": [
+      {
+        "page_number": 1,
+        "image_path": "assets/shoots/f/trends/p1.jpg",
+        "items": [
+          { "slot": 1, "title": "Аркадный неон", "prompt": "girl sitting inside a neon claw machine, holding toy, cyberpunk vibe", "is_premium": false },
+          { "slot": 2, "title": "Маска теней", "prompt": "girl holding a friday 13th mask near face, dark mystery atmosphere", "is_premium": true },
+          { "slot": 3, "title": "Крик", "prompt": "girl talking on retro pink phone, ghostface killer in background doorway", "is_premium": true },
+          { "slot": 4, "title": "Хоррор-селфи", "prompt": "girl taking selfie with group of horror movie villains behind her", "is_premium": true },
+          { "slot": 5, "title": "Пластиковый мир", "prompt": "girl doll in pink plastic box, barbie style, studio lighting", "is_premium": true },
+          { "slot": 6, "title": "Кибер-ангел", "prompt": "futuristic girl with glowing holographic wings, cyberpunk city background", "is_premium": true },
+          { "slot": 7, "title": "Ренессанс", "prompt": "classic oil painting style portrait of a girl, museum lighting, vintage dress", "is_premium": true },
+          { "slot": 8, "title": "Матрица", "prompt": "girl in black leather coat and sunglasses, falling green code background", "is_premium": true },
+          { "slot": 9, "title": "Аниме", "prompt": "anime style portrait, large eyes, colorful hair, 2d art style", "is_premium": true }
         ]
       }
     ]

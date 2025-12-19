@@ -50,20 +50,25 @@ class CatalogGenIn(BaseModel):
 def _check_and_increment_limit(db: Session, user: User) -> bool:
     credits = db.query(PremiumCredits).filter(PremiumCredits.user_id == user.id).first()
     if not credits:
-        credits = PremiumCredits(user_id=user.id, web_queries=0, img_limit_base=0)
+        # --- ИЗМЕНЕНИЕ: 1 бесплатная генерация для новых ---
+        credits = PremiumCredits(user_id=user.id, web_queries=0, img_limit_base=0, image_credits=1)
         db.add(credits)
         db.commit()
         db.refresh(credits)
 
-    used = credits.web_queries or 0
-    limit = credits.img_limit_base or 0
+    # 1. Base limits
+    base_used = credits.web_queries or 0
+    base_limit = credits.img_limit_base or 0
+    
+    # 2. Addons (сюда попадает и бесплатная генерация)
     addons = credits.image_credits or 0
     
-    if limit == 0 and addons == 0:
+    if base_limit == 0 and addons == 0:
         return False
         
-    if used < limit:
-        credits.web_queries = used + 1
+    # Списываем
+    if base_used < base_limit:
+        credits.web_queries = base_used + 1
     else:
         if addons > 0:
             credits.image_credits = addons - 1
@@ -108,10 +113,6 @@ def _get_prompt_by_global_idx(db: Session, gender: str, cat_slug: str, global_id
 
 @router.get("/catalog/info")
 def get_catalog_page_info(gender: str, cat: str, page: int, db: Session = Depends(get_db)):
-    """
-    Возвращает количество элементов на конкретной странице категории.
-    Используется ботом для отрисовки правильного количества кнопок.
-    """
     stmt = (
         select(func.count(CatalogItem.id))
         .join(CatalogPage, CatalogItem.page_id == CatalogPage.id)
@@ -123,9 +124,6 @@ def get_catalog_page_info(gender: str, cat: str, page: int, db: Session = Depend
         )
     )
     count = db.execute(stmt).scalar() or 0
-    
-    # Если элементов 0, возможно такой страницы нет, возвращаем дефолт 9 или 0
-    # Но лучше честный count.
     return {"count": count}
 
 

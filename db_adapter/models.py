@@ -11,6 +11,7 @@ from sqlalchemy import (
     Text,
     Boolean,
     BigInteger,
+    UniqueConstraint, # <--- Добавил импорт
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -215,9 +216,16 @@ class Payment(Base):
 
 class CatalogCategory(Base):
     __tablename__ = "catalog_categories"
+    
+    # Правильное ограничение: slug уникален ТОЛЬКО в паре с gender
+    # (например, может быть hair/m и hair/f, но не два hair/m)
+    __table_args__ = (
+        UniqueConstraint('slug', 'gender', name='uq_slug_gender'),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    slug: Mapped[str] = mapped_column(String(64), unique=True, index=True)  # 'moustache', 'winter'
+    # Убрал index=True отсюда, чтобы не создавать лишний индекс (хватит UniqueConstraint)
+    slug: Mapped[str] = mapped_column(String(64))  
     type: Mapped[str] = mapped_column(String(32))  # 'editor' | 'shoot'
     gender: Mapped[str] = mapped_column(String(16))  # 'm' | 'f' | 'all'
     title_ru: Mapped[str] = mapped_column(String(128))
