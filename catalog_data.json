@@ -399,7 +399,12 @@
           { "slot": 1, "title": "Зимняя Москва", "prompt": "girl on Red Square background in winter, wearing ushanka hat, holding fir branches", "is_premium": false },
           { "slot": 2, "title": "Жёлтая сказка", "prompt": "girl wearing bright yellow fur coat, christmas street background", "is_premium": true },
           { "slot": 3, "title": "Русская зима", "prompt": "girl in white fur coat and red scarf, holding samovar with bagels, russian winter forest", "is_premium": true },
-          { "slot": 4, "title": "Хозяйка леса", "prompt": "woman riding a brown bear in snowy forest, wearing white fur coat, fantasy photography", "is_premium": true },
+         {
+  "slot": 4,
+  "title": "Хозяйка леса",
+  "prompt": "photorealistic full body shot of a woman riding a huge brown bear in a snowy winter forest, she is wearing a red bikini top and a large voluminous white fur coat draped over her shoulders, open coat, snow-covered pine trees in background, highly detailed, cinematic lighting, 8k, masterpiece",
+  "is_premium": true
+},
           { "slot": 5, "title": "Сладкая компания", "prompt": "girl in cozy room surrounded by giant m&m characters", "is_premium": true },
           { "slot": 6, "title": "Алые ягоды", "prompt": "girl in white fur coat holding branches with red berries, snowy forest", "is_premium": true },
           { "slot": 7, "title": "Дорога в снегу", "prompt": "girl walking husky dog on a snowy road, red car in background", "is_premium": true },
