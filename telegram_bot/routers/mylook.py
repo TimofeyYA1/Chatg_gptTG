@@ -87,7 +87,6 @@ def img_shoot(gender: str, cat: str, page: int) -> str:
     if p: return p
     p1 = _find(_assets("shoots", gender, cat, "p1"))
     if p1: return p1
-    # Если картинки нет, берем заглушку в зависимости от пола
     if gender == 'f':
         return img_ui("female_shoots")
     return img_ui("shoots_home")
@@ -97,7 +96,6 @@ def img_editor(gender: str, cat: str, page: int) -> str:
     if p: return p
     p1 = _find(_assets("editor", gender, cat, "p1"))
     if p1: return p1
-    # Если картинки нет, берем заглушку в зависимости от пола
     if gender == 'f':
         return img_ui("female_editor")
     return img_ui("editor_home")
@@ -429,7 +427,6 @@ async def back_to_main_menu(call: CallbackQuery, state: FSMContext) -> None:
     await call.answer()
 
 async def _show_main_menu(call: CallbackQuery, state: FSMContext) -> None:
-    # ПОЛУЧАЕМ ПОЛ ИЗ STATE
     data = await state.get_data()
     gender = data.get("styles_gender", "m")
     
@@ -440,7 +437,6 @@ async def _show_main_menu(call: CallbackQuery, state: FSMContext) -> None:
         "профессиональные AI-съёмки в один клик."
     )
     
-    # ВЫБОР ПРАВИЛЬНОЙ КАРТИНКИ
     img = img_ui("female_menu") if gender == "f" else img_ui("menu")
     
     await panel_edit_media(call, state, img_path=img, caption=menu_caption, kb=ui.kb_main_menu("ru"))
@@ -484,9 +480,14 @@ async def editor_pick(call: CallbackQuery, state: FSMContext) -> None:
     
     data = await state.get_data()
     editor_sel = data.get("editor_sel", {})
-    editor_sel[cat] = global_idx
-    await state.update_data(editor_sel=editor_sel)
     
+    # ЛОГИКА ЕДИНСТВЕННОГО ВЫБОРА + TOGGLE (отмена при повторном клике)
+    if editor_sel.get(cat) == global_idx:
+        del editor_sel[cat]
+    else:
+        editor_sel[cat] = global_idx
+        
+    await state.update_data(editor_sel=editor_sel)
     await _render_page(call, state, "editor", cat, page)
 
 @router.callback_query(F.data.startswith("editor:none:"))
@@ -551,7 +552,6 @@ async def _render_page(call: CallbackQuery, state: FSMContext, mode: str, cat: s
         status_prefix = _get_status_text(data.get("editor_sel", {}))
 
     if mode == "editor":
-        # Используем обновленный img_editor (с полом)
         img = img_editor(gender, cat, page)
         show_none = True
         g_idx = data.get("editor_sel", {}).get(cat)
@@ -561,7 +561,6 @@ async def _render_page(call: CallbackQuery, state: FSMContext, mode: str, cat: s
                 selected = g_idx - start_offset
 
     else:
-        # Используем обновленный img_shoot (с полом)
         img = img_shoot(gender, cat, page)
         show_none = False
         if data.get("shoot_sel", {}).get("cat") == cat:
@@ -569,8 +568,6 @@ async def _render_page(call: CallbackQuery, state: FSMContext, mode: str, cat: s
             if g_idx and data.get("shoot_sel", {}).get("page") == page:
                 selected = data.get("shoot_sel", {}).get("sub_idx")
 
-    # Для корректной пагинации лучше запрашивать общее число страниц у сервера
-    # Но пока оставим локальный подсчет файлов (нужно убедиться что папки есть)
     folder = _assets("editor", gender, cat) if mode == "editor" else _assets("shoots", gender, cat)
     total_pages = _pages_count(folder)
     
@@ -755,7 +752,6 @@ async def on_gen_same_photo(call: CallbackQuery, state: FSMContext):
     await state.set_state(Flow.main_menu)
     menu_caption = "🧊 <b>Редактор внешности</b> — точечные изменения.\n\n📸 <b>Фотосессии</b> — готовые стилизованные образы."
     
-    # ПРАВИЛЬНЫЙ ВЫБОР МЕНЮ
     data = await state.get_data()
     gender = data.get("styles_gender", "m")
     img = img_ui("female_menu") if gender == "f" else img_ui("menu")
