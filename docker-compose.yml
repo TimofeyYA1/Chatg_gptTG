@@ -42,6 +42,22 @@ services:
     entrypoint: ["/bin/bash", "docker/entrypoint_bot.sh"]
     volumes:
       - ./fonts/ARIALBD.TTF:/app/fonts/ARIALBD.TTF:ro
+  # ... остальные сервисы ...
+
+  backup_service:
+    build: ./backup_service
+    depends_on:
+      - db
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=db
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - ADMIN_CHAT_ID=847867090
+    restart: always
 
 volumes:
   db_data:
