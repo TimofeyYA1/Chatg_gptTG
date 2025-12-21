@@ -84,6 +84,7 @@ CB_PKG_5000 = "pkg:5000"
 CB_SAVE_FILE = "res:save_file"
 CB_GEN_SAME_PHOTO = "res:same_photo" 
 CB_GEN_NEW_PHOTO = "res:new_photo"   
+CB_REGENERATE = "res:regen" # <--- ВОТ ЭТОЙ КОНСТАНТЫ НЕ ХВАТАЛО
 
 # Help
 CB_LANG_TOGGLE = "help:lang"
@@ -124,7 +125,9 @@ TEXTS = {
         "pick_gender": "🟡 Выбери свой пол:",
         "send_photo": "📸 Отправьте фото, где хорошо видно лицо — это нужно для корректной генерации образа.",
         "photo_ok": "Фото принято ✅ Теперь выбирай режим:",
-        "gen_wait": "⏳ Генерирую… секундочку.",
+        "gen_wait": "⏳ <b>Обрабатываем ваше фото...</b>",
+        "new_photo_req": "📸 Пожалуйста, пришлите новую фотографию.",
+        "result_caption": "Made with ❤️ by @MyLook",
     },
 }
 
@@ -147,9 +150,7 @@ TEXT_PREMIUM_ACTIVE_TEMPLATE = (
     "✨ Доступно генераций: <b>{available}</b>\n"
     "🌸 Подписка: <b>Премиум на {plan_name} ({limit} генераций)</b>\n"
     "{renewal_info}\n\n"
-    "Дополнительные пакеты генераций можно приобрести в разделе /packages.\n\n"
-    "🎁 Приглашайте друзей и получайте бесплатные генерации. 1 приглашенный друг = 3 генерации. "
-    "Приглашено друзей: {invited_count}"
+    "Дополнительные пакеты генераций можно приобрести в разделе /packages."
 )
 
 TEXT_HELP_RU = (
@@ -407,12 +408,11 @@ def kb_premium_active(user_id: int, bot_name: str = "mylookbot", auto_renew: boo
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 def kb_result_actions(lang: str = "ru") -> InlineKeyboardMarkup:
-    """3 кнопки вертикально для удобства"""
+    """Кнопки под результатом генерации"""
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="💾 Сохранить в файле", callback_data=CB_SAVE_FILE)],
-            [InlineKeyboardButton(text="🎨 Редактировать текущее фото", callback_data=CB_GEN_SAME_PHOTO)],
-            [InlineKeyboardButton(text="📸 Создать новый образ", callback_data=CB_GEN_NEW_PHOTO)],
+            [InlineKeyboardButton(text="🔄 Перегенерировать", callback_data=CB_REGENERATE)],
+            [InlineKeyboardButton(text="🆕 Создать новый образ", callback_data=CB_GEN_NEW_PHOTO)],
         ]
     )
 

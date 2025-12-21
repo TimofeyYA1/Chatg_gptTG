@@ -10,10 +10,8 @@ from sqlalchemy.orm import Session
 
 from common.config import settings
 from db_adapter.database import get_db
-from db_adapter.models import User, Subscription, PremiumCredits, Referral
+from db_adapter.models import User, Subscription, PremiumCredits
 
-
-BONUS_DEFAULT_SUBSCRIPTION_CENTS = getattr(settings, "REFERRAL_SUBSCRIPTION_BONUS_CENTS", 100_00)
 
 router = APIRouter(tags=["subscriptions"])
 
@@ -54,19 +52,6 @@ def _get_or_create_credits(db: Session, user_id: int) -> PremiumCredits:
     db.add(p); db.commit(); db.refresh(p)
     return p
 
-def _apply_referral_subscription_bonus(db: Session, user: User) -> dict:
-    bonus_cents = BONUS_DEFAULT_SUBSCRIPTION_CENTS
-    if bonus_cents <= 0: return {"applied": False}
-    ref = db.execute(select(Referral).where(Referral.invited_user_id == user.id, Referral.bonus_awarded.is_(False))).scalar_one_or_none()
-    if not ref: return {"applied": False}
-    referrer = db.get(User, ref.referrer_id)
-    if not referrer: return {"applied": False}
-    referrer.balance_cents = (referrer.balance_cents or 0) + bonus_cents
-    user.balance_cents = (user.balance_cents or 0) + bonus_cents
-    ref.bonus_awarded = True
-    db.commit()
-    return {"applied": True, "bonus_cents": bonus_cents, "referrer_chat_id": referrer.chat_id}
-
 class SetPlanIn(BaseModel):
     chat_id: int
     plan: str
@@ -80,12 +65,10 @@ def summary(chat_id: int, db: Session = Depends(get_db)):
 
     # Проверка истечения времени
     if sub and sub.current_period_end and _now() >= sub.current_period_end:
-        # Сжигаем ВСЕ лимиты, включая докупленные (как в ТЗ)
+        # Сжигаем ВСЕ лимиты
         credits.msg_limit_base = 0
         credits.img_limit_base = 0
         credits.video_limit_base = 0
-        
-        # Обнуляем докупленные пакеты (они сгорают при окончании подписки)
         credits.image_credits = 0 
         
         db.delete(sub)
@@ -150,11 +133,6 @@ def set_plan(payload: SetPlanIn, db: Session = Depends(get_db)):
     
     user = _get_or_create_user(db, chat_id)
     
-    # Запрет покупки поверх (если не продление) - пока отключим для теста или оставим
-    # sub = _get_sub(db, user.id)
-    # if sub and sub.current_period_end and sub.current_period_end > _now():
-    #     raise HTTPException(400, "subscription_already_active")
-
     if (user.balance_cents or 0) < expected: raise HTTPException(402, "insufficient funds")
     user.balance_cents -= expected
 
@@ -183,8 +161,6 @@ def set_plan(payload: SetPlanIn, db: Session = Depends(get_db)):
     # Сброс использования при НОВОЙ покупке/продлении
     credits.web_queries = 0 
     
-    # При продлении аддоны переносятся (мы их просто не трогаем, они в image_credits)
-
     db.commit()
     return {"ok": True, "plan": plan}
 

@@ -148,6 +148,16 @@ async def start(message: Message, state: FSMContext) -> None:
         kb = ui.kb_premium_paywall("ru")
         await panel_send(message, state, path, caption, kb=kb)
 
+@router.message(F.photo, F.caption)
+async def handle_photo_with_prompt(message: Message, state: FSMContext):
+    if not await has_generations_async(message.chat.id):
+        await message.answer("🔒 Нужна подписка или доступные генерации для обработки.")
+        return
+    photo = message.photo[-1]
+    await state.update_data(photo_file_id=photo.file_id)
+    await state.update_data(last_custom_prompt=message.caption)
+    await _process_generation(message, state, prompt=message.caption, is_new_message=True)
+
 @router.callback_query(F.data == ui.CB_RESTART)
 async def restart_callback(call: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
@@ -174,9 +184,7 @@ async def premium_cmd(message: Message, state: FSMContext, is_edit: bool = False
     uid = message.chat.id
     try: summary = await api_client.get_sub_summary(uid)
     except: summary = {}
-
     role = (summary.get("role") or "free").strip()
-    
     if role.lower() == "free":
         caption = ui.PREMIUM_PAYWALL_CAPTION_RU
         kb = ui.kb_premium_paywall("ru")
@@ -185,35 +193,25 @@ async def premium_cmd(message: Message, state: FSMContext, is_edit: bool = False
         totals = summary.get("totals", {})
         usage = summary.get("usage", {})
         available = max(0, totals.get("images", 0) - usage.get("images", 0))
-        
         plan_name = PLAN_TRANSLATE.get(role, role)
         base_limit = summary.get("limits", {}).get("images", 0)
         price = PLAN_PRICES.get(role, "---")
         active_until_str = _format_ru_date(summary.get("active_until"))
         auto_renew = summary.get("auto_renew", True)
+        renewal_info = f"💳 Следующее списание: <b>{active_until_str} ({price}₽)</b>" if auto_renew else f"⏳ Действует до: <b>{active_until_str}</b>"
         
-        if auto_renew:
-            renewal_info = f"💳 Следующее списание: <b>{active_until_str} ({price}₽)</b>"
-        else:
-            renewal_info = f"⏳ Действует до: <b>{active_until_str}</b>"
-        
-        invited = 0 
-
         caption = ui.TEXT_PREMIUM_ACTIVE_TEMPLATE.format(
             available=available,
             plan_name=plan_name,
             limit=base_limit,
             renewal_info=renewal_info,
             price=price,
-            invited_count=invited
+            invited_count=0
         )
-        
         bot_info = await message.bot.get_me()
         kb = ui.kb_premium_active(uid, bot_info.username, auto_renew=auto_renew, show_edit_btn=show_edit_btn)
         img = img_ui("premium")
-
     if not img or not os.path.exists(img): img = img_ui("premium")
-    
     if is_edit:
         data = await state.get_data()
         msg_id = data.get("panel_id") or message.message_id
@@ -222,13 +220,11 @@ async def premium_cmd(message: Message, state: FSMContext, is_edit: bool = False
         else: media = InputMediaPhoto(media=FSInputFile(img), caption=caption)
         try:
             res = await message.bot.edit_message_media(chat_id=message.chat.id, message_id=msg_id, media=media, reply_markup=kb)
-            if not cached_id and isinstance(res, Message) and res.photo:
-                _MEDIA_CACHE[img] = res.photo[-1].file_id
+            if not cached_id and isinstance(res, Message) and res.photo: _MEDIA_CACHE[img] = res.photo[-1].file_id
         except TelegramBadRequest: pass
         except Exception: await panel_send(message, state, img, caption, kb)
     else:
         await panel_send(message, state, img_path=img, caption=caption, kb=kb)
-
 
 @router.message(Command("help"))
 async def help_cmd(message: Message, state: FSMContext) -> None:
@@ -237,15 +233,10 @@ async def help_cmd(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data == ui.CB_LANG_TOGGLE)
 async def help_lang_toggle(call: CallbackQuery, state: FSMContext) -> None:
     current_text = call.message.text or call.message.caption or ""
-    if "Как использовать" in current_text:
-        new_text = ui.TEXT_HELP_EN
-        new_kb = ui.kb_help("en")
-    else:
-        new_text = ui.TEXT_HELP_RU
-        new_kb = ui.kb_help("ru")
+    if "Как использовать" in current_text: new_text = ui.TEXT_HELP_EN; new_kb = ui.kb_help("en")
+    else: new_text = ui.TEXT_HELP_RU; new_kb = ui.kb_help("ru")
     await call.message.edit_text(new_text, reply_markup=new_kb, disable_web_page_preview=True)
     await call.answer()
-
 
 @router.message(Command("packages"))
 async def packages_cmd(message: Message, state: FSMContext) -> None:
@@ -256,72 +247,46 @@ async def packages_cmd(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data.startswith("pkg:"))
 async def buy_package_click(call: CallbackQuery, state: FSMContext):
-    pkg_map = {
-        ui.CB_PKG_150: {"qty": 150, "price": 349_00},
-        ui.CB_PKG_1000: {"qty": 1000, "price": 1999_00},
-        ui.CB_PKG_5000: {"qty": 5000, "price": 5999_00},
-    }
+    pkg_map = {ui.CB_PKG_150: {"qty": 150, "price": 349_00}, ui.CB_PKG_1000: {"qty": 1000, "price": 1999_00}, ui.CB_PKG_5000: {"qty": 5000, "price": 5999_00}}
     info = pkg_map.get(call.data)
     if not info: return
-
     if not await has_generations_async(call.from_user.id):
-        await call.answer("Нужна активная подписка!", show_alert=True)
-        return
-    
+        await call.answer("Нужна активная подписка!", show_alert=True); return
     res = await api_client.buy_addon(call.from_user.id, info["qty"], info["price"])
     if res.get("ok"):
         await call.answer(f"✅ Успешно добавлено {info['qty']} генераций!", show_alert=True)
         await premium_cmd(call.message, state, is_edit=True)
-    else:
-        await call.answer(f"Ошибка: {res.get('detail', 'Error')}", show_alert=True)
-
-
-# -------------------- PAYMENTS --------------------
+    else: await call.answer(f"Ошибка: {res.get('detail', 'Error')}", show_alert=True)
 
 @router.callback_query(F.data.startswith("premium:buy:"))
 async def premium_buy(call: CallbackQuery, state: FSMContext) -> None:
-    uid = call.from_user.id
-    period = call.data.split(":")[-1]
-    if uid in BUY_LOCK:
-        await call.answer("⏳ Обработка...", show_alert=True)
-        return
+    uid = call.from_user.id; period = call.data.split(":")[-1]
+    if uid in BUY_LOCK: await call.answer("⏳ Обработка...", show_alert=True); return
     BUY_LOCK.add(uid)
-
     try:
         res = await api_client.set_plan(uid, period=period)
         if res.get("error"):
             msg = res.get("detail", "")
-            if msg == "subscription_already_active":
-                await call.answer("У вас уже есть активная подписка!", show_alert=True)
-            else:
-                await call.answer(f"Ошибка: {msg}", show_alert=True)
+            if msg == "subscription_already_active": await call.answer("У вас уже есть активная подписка!", show_alert=True)
+            else: await call.answer(f"Ошибка: {msg}", show_alert=True)
             return
-        
         await call.answer("Оплата успешна! ✅", show_alert=True)
-        try: await call.message.delete()
+        try: await call.message.delete(); 
         except: pass
         await premium_cmd(call.message, state, is_edit=False, show_edit_btn=True)
-
-    except Exception as e:
-        print(f"Payment Error: {e}")
-    finally:
-        BUY_LOCK.discard(uid)
+    except Exception as e: print(f"Payment Error: {e}")
+    finally: BUY_LOCK.discard(uid)
 
 @router.callback_query(F.data == ui.CB_CANCEL_SUB)
 async def cancel_sub(call: CallbackQuery, state: FSMContext):
     res = await api_client.cancel_plan(call.from_user.id)
-    if res.get("ok"):
-        await call.answer("Автопродление отключено.", show_alert=True)
-        await premium_cmd(call.message, state, is_edit=True)
-    else:
-        await call.answer("Ошибка отмены.", show_alert=True)
+    if res.get("ok"): await call.answer("Автопродление отключено.", show_alert=True); await premium_cmd(call.message, state, is_edit=True)
+    else: await call.answer("Ошибка отмены.", show_alert=True)
 
 @router.callback_query(F.data == ui.CB_GOTO_EDIT)
 async def on_goto_edit(call: CallbackQuery, state: FSMContext):
     await state.set_state(Flow.waiting_photo)
-    path = img_ui("start")
-    caption = ui.TEXTS["ru"]["start_title"] + "\n" + ui.TEXTS["ru"]["send_photo"]
-    await panel_send(call.message, state, path, caption, kb=None)
+    await panel_send(call.message, state, img_ui("start"), ui.TEXTS["ru"]["start_title"] + "\n" + ui.TEXTS["ru"]["send_photo"], kb=None)
     await call.answer()
 
 
@@ -344,25 +309,16 @@ async def got_document_photo(message: Message, state: FSMContext) -> None:
 
 async def _after_photo_received(message: Message, state: FSMContext):
     await state.set_state(Flow.choosing_gender)
-    await panel_send(
-        message, state,
-        img_path=img_ui("gender"),
-        caption="Выберите пол для корректного применения стилей:",
-        kb=ui.kb_gender_or_prompt("ru"),
-    )
+    await panel_send(message, state, img_ui("gender"), "Выберите пол для корректного применения стилей:", ui.kb_gender_or_prompt("ru"))
 
 @router.callback_query(F.data.in_({ui.CB_STYLES_M, ui.CB_STYLES_F}))
 async def choose_gender(call: CallbackQuery, state: FSMContext) -> None:
     gender = "m" if call.data == ui.CB_STYLES_M else "f"
     await state.update_data(styles_gender=gender)
-    
     if not await has_generations_async(call.from_user.id):
-        img = img_ui("premium_paywall")
-        if not img or not os.path.exists(img): img = img_ui("premium")
-        await panel_edit_media(call, state, img_path=img, caption=ui.PREMIUM_PAYWALL_CAPTION_RU, kb=ui.kb_premium_paywall("ru"))
-        await call.answer()
-        return
-
+        img = img_ui("premium_paywall") or img_ui("premium")
+        await panel_edit_media(call, state, img, ui.PREMIUM_PAYWALL_CAPTION_RU, ui.kb_premium_paywall("ru"))
+        await call.answer(); return
     await state.set_state(Flow.main_menu)
     await state.update_data(editor_sel={}, shoot_sel={}) 
     await _show_main_menu(call, state)
@@ -371,38 +327,17 @@ async def choose_gender(call: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data == ui.CB_BACK_TO_GENDER)
 async def back_to_gender(call: CallbackQuery, state: FSMContext) -> None:
     if not await has_generations_async(call.from_user.id):
-        await call.answer("Нужна подписка", show_alert=True)
-        return
-
+        await call.answer("Нужна подписка", show_alert=True); return
     await state.set_state(Flow.choosing_gender)
-    await panel_edit_media(
-        call, state,
-        img_path=img_ui("gender"),
-        caption="Выберите пол для корректного применения стилей:",
-        kb=ui.kb_gender_or_prompt("ru")
-    )
+    await panel_edit_media(call, state, img_ui("gender"), "Выберите пол для корректного применения стилей:", ui.kb_gender_or_prompt("ru"))
     await call.answer()
 
 @router.callback_query(F.data == ui.CB_CUSTOM_PROMPT)
 async def custom_prompt_click(call: CallbackQuery, state: FSMContext) -> None:
     if not await has_generations_async(call.from_user.id):
-        await call.answer("Нужна подписка 🔒", show_alert=True)
-        return
-    
+        await call.answer("Нужна подписка 🔒", show_alert=True); return
     await state.set_state(Flow.waiting_custom_prompt)
-    await panel_edit_media(
-        call, state,
-        img_path=img_ui("gender"), 
-        caption=(
-            "✍️ <b>Напишите свой запрос.</b>\n\n"
-            "Например:\n"
-            "<i>— Сделай меня киборгом в стиле киберпанк</i>\n"
-            "<i>— Фото в костюме супергероя на крыше</i>\n"
-            "<i>— Нарисуй меня в стиле аниме 90-х</i>\n\n"
-            "Чем детальнее описание, тем лучше результат! 👇"
-        ),
-        kb=ui.kb_back_to_gender("ru")
-    )
+    await panel_edit_media(call, state, img_ui("gender"), "✍️ <b>Напишите свой запрос.</b>\n\n...", ui.kb_back_to_gender("ru"))
     await call.answer()
 
 @router.message(Flow.waiting_custom_prompt)
@@ -410,59 +345,41 @@ async def handle_custom_prompt_text(message: Message, state: FSMContext) -> None
     prompt = message.text
     if not prompt: return
     if not await has_generations_async(message.chat.id):
-        await message.answer("🔒 Ваша подписка истекла.")
-        return
-    await _process_generation(message, state, prompt)
+        await message.answer("🔒 Ваша подписка истекла."); return
+    await state.update_data(last_custom_prompt=prompt)
+    await _process_generation(message, state, prompt=prompt, is_new_message=True)
 
 @router.callback_query(F.data == ui.CB_MENU)
 async def back_to_main_menu(call: CallbackQuery, state: FSMContext) -> None:
     if not await has_generations_async(call.from_user.id):
         img = img_ui("premium_paywall") or img_ui("premium")
-        await panel_edit_media(call, state, img_path=img, caption=ui.PREMIUM_PAYWALL_CAPTION_RU, kb=ui.kb_premium_paywall("ru"))
-        await call.answer("Срок подписки истек")
-        return
-
+        await panel_edit_media(call, state, img, ui.PREMIUM_PAYWALL_CAPTION_RU, ui.kb_premium_paywall("ru"))
+        await call.answer(); return
     await state.set_state(Flow.main_menu)
     await _show_main_menu(call, state)
     await call.answer()
 
 async def _show_main_menu(call: CallbackQuery, state: FSMContext) -> None:
-    data = await state.get_data()
-    gender = data.get("styles_gender", "m")
-    
-    menu_caption = (
-        "🧊 <b>Редактор внешности</b> — точечные изменения вашего образа:\n"
-        "прически, цвет волос, пирсинг и многое другое.\n\n"
-        "📸 <b>Фотосессии</b> — готовые стилизованные образы и\n"
-        "профессиональные AI-съёмки в один клик."
-    )
-    
+    data = await state.get_data(); gender = data.get("styles_gender", "m")
+    menu_caption = "🧊 <b>Редактор внешности</b> — точечные изменения...\n\n📸 <b>Фотосессии</b> — готовые образы."
     img = img_ui("female_menu") if gender == "f" else img_ui("menu")
-    
     await panel_edit_media(call, state, img_path=img, caption=menu_caption, kb=ui.kb_main_menu("ru"))
 
 @router.callback_query(F.data == ui.CB_BACK_TO_PHOTO)
 async def back_to_photo(call: CallbackQuery, state: FSMContext) -> None:
     if not await has_generations_async(call.from_user.id):
-        await call.answer("Нужна подписка")
-        return
-
+        await call.answer("Нужна подписка"); return
     await state.set_state(Flow.waiting_photo)
-    caption = ui.TEXTS["ru"]["start_title"] + "\n" + ui.TEXTS["ru"]["send_photo"]
-    await panel_edit_media(call, state, img_path=img_ui("start"), caption=caption, kb=None)
+    await panel_edit_media(call, state, img_ui("start"), ui.TEXTS["ru"]["start_title"] + "\n" + ui.TEXTS["ru"]["send_photo"], None)
     await call.answer()
 
 @router.callback_query(F.data == ui.CB_EDITOR_HOME)
 async def editor_home(call: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(Flow.editor_home)
-    data = await state.get_data()
-    gender = data.get("styles_gender", "m")
+    data = await state.get_data(); gender = data.get("styles_gender", "m")
     status_text = _get_status_text(data.get("editor_sel", {}))
-    
-    caption = status_text + "🧊 Редактор:"
     img = img_ui("female_editor") if gender == "f" else img_ui("editor_home")
-    
-    await panel_edit_media(call, state, img_path=img, caption=caption, kb=ui.kb_editor_home("ru", gender))
+    await panel_edit_media(call, state, img, status_text + "🧊 Редактор:", ui.kb_editor_home("ru", gender))
     await call.answer()
 
 @router.callback_query(F.data.startswith("editor:open:"))
@@ -474,27 +391,18 @@ async def editor_open_cat(call: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data.startswith("editor:pick:"))
 async def editor_pick(call: CallbackQuery, state: FSMContext) -> None:
-    parts = call.data.split(":")
-    cat, page, idx = parts[2], int(parts[3]), int(parts[4])
+    parts = call.data.split(":"); cat, page, idx = parts[2], int(parts[3]), int(parts[4])
     global_idx = (page - 1) * 9 + idx
-    
-    data = await state.get_data()
-    editor_sel = data.get("editor_sel", {})
-    
-    # ЛОГИКА ЕДИНСТВЕННОГО ВЫБОРА + TOGGLE (отмена при повторном клике)
-    if editor_sel.get(cat) == global_idx:
-        del editor_sel[cat]
-    else:
-        editor_sel[cat] = global_idx
-        
+    data = await state.get_data(); editor_sel = data.get("editor_sel", {})
+    if editor_sel.get(cat) == global_idx: del editor_sel[cat]
+    else: editor_sel[cat] = global_idx
     await state.update_data(editor_sel=editor_sel)
     await _render_page(call, state, "editor", cat, page)
 
 @router.callback_query(F.data.startswith("editor:none:"))
 async def editor_none(call: CallbackQuery, state: FSMContext) -> None:
     cat = call.data.split(":")[-1]
-    data = await state.get_data()
-    editor_sel = data.get("editor_sel", {})
+    data = await state.get_data(); editor_sel = data.get("editor_sel", {})
     if cat in editor_sel: del editor_sel[cat]
     await state.update_data(editor_sel=editor_sel)
     await _render_page(call, state, "editor", cat, data.get("picker_page", 1))
@@ -502,12 +410,9 @@ async def editor_none(call: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data == ui.CB_SHOOT_HOME)
 async def shoots_home(call: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(Flow.shoots_home)
-    data = await state.get_data()
-    gender = data.get("styles_gender", "m")
-    
+    data = await state.get_data(); gender = data.get("styles_gender", "m")
     img = img_ui("female_shoots") if gender == "f" else img_ui("shoots_home")
-    
-    await panel_edit_media(call, state, img_path=img, caption="📸 Фотосессии:", kb=ui.kb_shoots_home("ru"))
+    await panel_edit_media(call, state, img, "📸 Фотосессии:", ui.kb_shoots_home("ru"))
     await call.answer()
 
 @router.callback_query(F.data.startswith("shoot:open:"))
@@ -519,175 +424,142 @@ async def shoot_open(call: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data.startswith("shoot:pick:"))
 async def shoot_pick(call: CallbackQuery, state: FSMContext) -> None:
-    parts = call.data.split(":")
-    cat, page, idx = parts[2], int(parts[3]), int(parts[4])
+    parts = call.data.split(":"); cat, page, idx = parts[2], int(parts[3]), int(parts[4])
     global_idx = (page - 1) * 9 + idx
     await state.update_data(shoot_sel={"cat": cat, "idx": global_idx, "page": page, "sub_idx": idx})
     await _render_page(call, state, "shoot", cat, page)
 
 @router.callback_query(F.data.startswith(ui.CB_NEXT))
 async def nav_next(call: CallbackQuery, state: FSMContext) -> None:
-    parts = call.data.split(":")
-    mode, cat, page = parts[2], parts[3], int(parts[4])
+    parts = call.data.split(":"); mode, cat, page = parts[2], parts[3], int(parts[4])
     await state.update_data(picker_page=page + 1)
     await _render_page(call, state, mode, cat, page + 1)
 
 @router.callback_query(F.data.startswith(ui.CB_PREV))
 async def nav_prev(call: CallbackQuery, state: FSMContext) -> None:
-    parts = call.data.split(":")
-    mode, cat, page = parts[2], parts[3], int(parts[4])
+    parts = call.data.split(":"); mode, cat, page = parts[2], parts[3], int(parts[4])
     await state.update_data(picker_page=max(1, page - 1))
     await _render_page(call, state, mode, cat, max(1, page - 1))
 
 async def _render_page(call: CallbackQuery, state: FSMContext, mode: str, cat: str, page: int):
-    data = await state.get_data()
-    gender = data.get("styles_gender", "m")
+    data = await state.get_data(); gender = data.get("styles_gender", "m")
     selected = None
-    
     count = await api_client.get_catalog_page_info(gender, cat, page)
     title_text = ui.get_cat_title(cat)
-    
-    status_prefix = ""
-    if mode == "editor":
-        status_prefix = _get_status_text(data.get("editor_sel", {}))
+    status_prefix = _get_status_text(data.get("editor_sel", {})) if mode == "editor" else ""
 
     if mode == "editor":
         img = img_editor(gender, cat, page)
         show_none = True
         g_idx = data.get("editor_sel", {}).get(cat)
         if g_idx:
-            start_offset = 9 * (page - 1) 
-            if start_offset < g_idx <= start_offset + count:
-                selected = g_idx - start_offset
-
+            start_offset = 9 * (page - 1)
+            if start_offset < g_idx <= start_offset + count: selected = g_idx - start_offset
     else:
         img = img_shoot(gender, cat, page)
         show_none = False
         if data.get("shoot_sel", {}).get("cat") == cat:
             g_idx = data.get("shoot_sel", {}).get("idx")
-            if g_idx and data.get("shoot_sel", {}).get("page") == page:
-                selected = data.get("shoot_sel", {}).get("sub_idx")
+            if g_idx and data.get("shoot_sel", {}).get("page") == page: selected = data.get("shoot_sel", {}).get("sub_idx")
 
     folder = _assets("editor", gender, cat) if mode == "editor" else _assets("shoots", gender, cat)
     total_pages = _pages_count(folder)
-    
-    kb = ui.kb_picker(
-        lang="ru", 
-        mode=mode, 
-        cat=cat, 
-        page=page, 
-        count=count, 
-        locked=set(), 
-        has_next=(page < total_pages), 
-        has_prev=(page > 1), 
-        show_none=show_none, 
-        selected_idx=selected
-    )
-    
-    full_caption = f"{status_prefix}{title_text}:"
-    await panel_edit_media(call, state, img_path=img, caption=full_caption, kb=kb)
+    kb = ui.kb_picker("ru", mode, cat, page, count, set(), (page < total_pages), (page > 1), show_none, selected)
+    await panel_edit_media(call, state, img, f"{status_prefix}{title_text}:", kb)
     try: await call.answer()
     except: pass
+
+
+# -------------------- GENERATION --------------------
 
 @router.callback_query(F.data == ui.CB_GENERATE)
 async def generate(call: CallbackQuery, state: FSMContext) -> None:
     if not await has_generations_async(call.from_user.id):
-        await call.answer("Подписка истекла!", show_alert=True)
-        return
+        await call.answer("Подписка истекла!", show_alert=True); return
 
     data = await state.get_data()
     file_id = data.get("photo_file_id")
-    shoot_sel = data.get("shoot_sel", {})
-    editor_sel = data.get("editor_sel", {})
-
-    if not file_id:
-        await call.answer("Нет фото. Начните заново /start", show_alert=True)
-        return
-    
-    if not shoot_sel and not editor_sel:
-        await call.answer("Выберите стиль или прическу!", show_alert=True)
-        return
+    if not file_id: await call.answer("Нет фото", show_alert=True); return
+    if not data.get("shoot_sel") and not data.get("editor_sel"): await call.answer("Ничего не выбрано!", show_alert=True); return
 
     await call.answer()
     
-    wait_msg = await call.message.answer("⏳ <b>Генерирую...</b>\n\n<i>Подбираем лучший образ...</i>")
+    # Сбрасываем кастомный промпт
+    await state.update_data(last_custom_prompt=None)
+    await _process_generation(call.message, state, is_new_message=False)
+
+
+@router.callback_query(F.data == ui.CB_REGENERATE)
+async def on_regenerate(call: CallbackQuery, state: FSMContext):
+    if not await has_generations_async(call.from_user.id):
+        await call.answer("Лимит исчерпан!", show_alert=True); return
+    
+    await call.answer()
+    data = await state.get_data()
+    prompt = data.get("last_custom_prompt")
+    await _process_generation(call.message, state, prompt=prompt, is_new_message=True)
+
+
+async def _process_generation(message: Message, state: FSMContext, prompt: str = None, is_new_message: bool = False):
+    wait_msg = None
+    if is_new_message:
+        wait_msg = await message.answer(ui.TEXTS["ru"]["gen_wait"])
+    else:
+        try: await message.edit_caption(caption=ui.TEXTS["ru"]["gen_wait"], reply_markup=None)
+        except: pass
 
     try:
-        file = await call.bot.get_file(file_id)
+        data = await state.get_data()
+        file_id = data.get("photo_file_id")
+        file = await message.bot.get_file(file_id)
         file_io = io.BytesIO()
-        await call.bot.download_file(file.file_path, file_io)
+        await message.bot.download_file(file.file_path, file_io)
         image_b64 = base64.b64encode(file_io.getvalue()).decode("utf-8")
 
-        res = await api_client.generate_from_catalog(
-            chat_id=call.from_user.id,
-            image_b64=image_b64,
-            gender=data.get("styles_gender", "m"),
-            editor_sel=editor_sel,
-            shoot_sel=shoot_sel
-        )
+        if prompt:
+            res = await api_client.edit_image(message.chat.id, prompt, image_b64)
+        else:
+            res = await api_client.generate_from_catalog(
+                chat_id=message.chat.id,
+                image_b64=image_b64,
+                gender=data.get("styles_gender", "m"),
+                editor_sel=data.get("editor_sel", {}),
+                shoot_sel=data.get("shoot_sel", {})
+            )
 
-        try: await wait_msg.delete()
-        except: pass
+        if wait_msg:
+            try: await wait_msg.delete()
+            except: pass
 
         if res.get("ok"):
             res_b64 = res.get("b64")
             if res_b64:
                 file_bytes = base64.b64decode(res_b64)
-                await call.message.answer_photo(
-                    BufferedInputFile(file_bytes, filename="result.jpg"), 
-                    caption="✨ Ваш новый образ!", 
-                    reply_markup=ui.kb_result_actions("ru")
-                )
+                input_file = BufferedInputFile(file_bytes, filename="result.jpg")
+                
+                if is_new_message:
+                    await message.answer_photo(input_file, caption=ui.TEXTS["ru"]["result_caption"], reply_markup=ui.kb_result_actions("ru"))
+                else:
+                    media = InputMediaPhoto(media=input_file, caption=ui.TEXTS["ru"]["result_caption"])
+                    try: await message.edit_media(media=media, reply_markup=ui.kb_result_actions("ru"))
+                    except TelegramBadRequest: await message.answer_photo(input_file, caption=ui.TEXTS["ru"]["result_caption"], reply_markup=ui.kb_result_actions("ru"))
+                
                 await state.update_data(last_result_b64=res_b64)
                 
-                if not await has_generations_async(call.from_user.id):
+                # Шлем файл
+                doc_file = BufferedInputFile(file_bytes, filename="mylook_result.jpg")
+                await message.answer_document(doc_file)
+
+                # Hard Offer
+                if not await has_generations_async(message.chat.id):
                     path = img_ui("premium_paywall")
                     caption = ui.TEXT_FREE_TRIAL_ENDED
                     kb = ui.kb_premium_paywall("ru")
-                    await panel_send(call.message, state, path, caption, kb)
+                    await panel_send(message, state, path, caption, kb)
             else:
-                await call.message.answer("⚠️ Пустой результат.")
+                await message.answer("⚠️ Пустой результат.")
         else:
             err = res.get("error", "unknown")
-            if err == "limit_exceeded":
-                path = img_ui("premium_paywall")
-                caption = ui.TEXT_FREE_TRIAL_ENDED
-                kb = ui.kb_premium_paywall("ru")
-                await panel_send(call.message, state, path, caption, kb)
-            else:
-                await call.message.answer(f"❌ Ошибка API: {err}")
-    
-    except Exception as e:
-        print(f"Gen Catalog Error: {e}")
-        try: await wait_msg.delete()
-        except: pass
-        await call.message.answer("❌ Произошла ошибка.")
-
-
-async def _process_generation(message: Message, state: FSMContext, prompt: str):
-    wait_msg = await message.answer(f"⏳ <b>Генерирую...</b>\n\n<i>Запрос: {prompt[:50]}...</i>")
-    
-    try:
-        data = await state.get_data()
-        file_id = data.get("photo_file_id")
-        
-        file = await message.bot.get_file(file_id)
-        file_io = io.BytesIO()
-        await message.bot.download_file(file.file_path, file_io)
-        
-        image_b64 = base64.b64encode(file_io.getvalue()).decode("utf-8")
-
-        res = await api_client.edit_image(
-            chat_id=message.chat.id,
-            prompt=prompt,
-            image_b64=image_b64
-        )
-        
-        try: await wait_msg.delete()
-        except: pass
-
-        if not res.get("ok"):
-            err = res.get("error", "Unknown")
             if err == "limit_exceeded":
                 path = img_ui("premium_paywall")
                 caption = ui.TEXT_FREE_TRIAL_ENDED
@@ -695,67 +567,38 @@ async def _process_generation(message: Message, state: FSMContext, prompt: str):
                 await panel_send(message, state, path, caption, kb)
             else:
                 await message.answer(f"❌ Ошибка API: {err}")
-            return
 
-        result_b64 = res.get("b64")
-        if result_b64:
-            result_bytes = base64.b64decode(result_b64)
-            result_file = BufferedInputFile(result_bytes, filename="result.jpg")
-            
-            await message.answer_photo(
-                result_file, 
-                caption="✨ Ваш новый образ!",
-                reply_markup=ui.kb_result_actions("ru")
-            )
-            await state.update_data(last_result_b64=result_b64)
-            
-            if not await has_generations_async(message.chat.id):
-                path = img_ui("premium_paywall")
-                caption = ui.TEXT_FREE_TRIAL_ENDED
-                kb = ui.kb_premium_paywall("ru")
-                await panel_send(message, state, path, caption, kb)
-        else:
-            await message.answer("⚠️ Сервер вернул пустой результат.")
-            
     except Exception as e:
-        print(f"[GEN ERROR] {e}")
-        try: await wait_msg.delete()
-        except: pass
-        await message.answer("❌ Произошла системная ошибка.")
+        print(f"Gen Error: {e}")
+        if wait_msg: 
+            try: await wait_msg.delete(); 
+            except: pass
+        await message.answer("❌ Произошла ошибка.")
 
 
 @router.callback_query(F.data == ui.CB_SAVE_FILE)
 async def on_save_file(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     b64_data = data.get("last_result_b64")
-    if not b64_data:
-        await call.answer("Файл устарел", show_alert=True)
-        return
+    if not b64_data: await call.answer("Файл устарел", show_alert=True); return
     await call.answer("Отправляю...")
     try:
         file_bytes = base64.b64decode(b64_data)
         await call.message.answer_document(BufferedInputFile(file_bytes, filename="mylook_result.jpg"), caption="Вот ваш файл 💾")
-    except Exception:
-        await call.answer("Ошибка отправки", show_alert=True)
+    except Exception: await call.answer("Ошибка отправки", show_alert=True)
 
 @router.callback_query(F.data == ui.CB_GEN_SAME_PHOTO)
 async def on_gen_same_photo(call: CallbackQuery, state: FSMContext):
     if not await has_generations_async(call.from_user.id):
         path = img_ui("premium_paywall")
-        caption = ui.TEXT_FREE_TRIAL_ENDED
-        kb = ui.kb_premium_paywall("ru")
-        await panel_send(call.message, state, path, caption, kb)
-        await call.answer()
-        return
+        await panel_send(call.message, state, path, ui.TEXT_FREE_TRIAL_ENDED, ui.kb_premium_paywall("ru"))
+        await call.answer(); return
 
     await state.update_data(shoot_sel={}, editor_sel={})
     await state.set_state(Flow.main_menu)
-    menu_caption = "🧊 <b>Редактор внешности</b> — точечные изменения.\n\n📸 <b>Фотосессии</b> — готовые стилизованные образы."
-    
-    data = await state.get_data()
-    gender = data.get("styles_gender", "m")
+    data = await state.get_data(); gender = data.get("styles_gender", "m")
+    menu_caption = "🧊 <b>Редактор внешности</b> — точечные изменения.\n\n📸 <b>Фотосессии</b> — готовые образы."
     img = img_ui("female_menu") if gender == "f" else img_ui("menu")
-    
     await panel_send(call.message, state, img_path=img, caption=menu_caption, kb=ui.kb_main_menu("ru"))
     await call.answer()
 
@@ -770,7 +613,7 @@ async def on_gen_new_photo(call: CallbackQuery, state: FSMContext):
         await panel_send(call.message, state, path, caption, kb=None)
     else:
         path = img_ui("premium_paywall")
-        caption = ui.TEXT_FREE_TRIAL_ENDED 
+        caption = ui.TEXT_FREE_TRIAL_ENDED
         kb = ui.kb_premium_paywall("ru")
         await panel_send(call.message, state, path, caption, kb=kb)
     await call.answer()
@@ -782,11 +625,9 @@ async def panel_send(message: Message, state: FSMContext, img_path: str, caption
         sent = await message.answer(caption, reply_markup=kb)
         await state.update_data(panel_id=sent.message_id)
         return
-    
     cached_id = _MEDIA_CACHE.get(img_path)
     if cached_id: photo_obj = cached_id
     else: photo_obj = FSInputFile(img_path)
-
     try:
         sent = await message.answer_photo(photo_obj, caption=caption, reply_markup=kb)
         if not cached_id and sent.photo: _MEDIA_CACHE[img_path] = sent.photo[-1].file_id
@@ -798,11 +639,9 @@ async def panel_edit_media(call: CallbackQuery, state: FSMContext, img_path: str
     data = await state.get_data()
     msg_id = data.get("panel_id") or call.message.message_id
     if not img_path or not os.path.exists(img_path): img_path = img_ui("start")
-    
     cached_id = _MEDIA_CACHE.get(img_path)
     if cached_id: media = InputMediaPhoto(media=cached_id, caption=caption)
     else: media = InputMediaPhoto(media=FSInputFile(img_path), caption=caption)
-    
     try:
         res = await call.bot.edit_message_media(chat_id=call.message.chat.id, message_id=msg_id, media=media, reply_markup=kb)
         if not cached_id and isinstance(res, Message) and res.photo: _MEDIA_CACHE[img_path] = res.photo[-1].file_id

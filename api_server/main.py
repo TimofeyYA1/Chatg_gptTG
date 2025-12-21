@@ -5,7 +5,7 @@ from common.config import settings
 from api_server.routers import health, account, image, video, payments, research, labs, bot_webhook
 from api_server.routers import chats, subscriptions
 from api_server.routers import usage  # <-- добавлено
-from api_server.routers import referrals
+# from api_server.routers import referrals
 
 app = FastAPI(title="AI SuperBot API", default_response_class=ORJSONResponse)
 
@@ -27,7 +27,7 @@ app.include_router(video.router, prefix="/video", tags=["video"])
 app.include_router(chats.router, prefix="/chats", tags=["chats"])
 app.include_router(subscriptions.router, prefix="/subscriptions", tags=["subscriptions"])
 app.include_router(usage.router, prefix="/usage", tags=["usage"])
-app.include_router(referrals.router, prefix="/referrals", tags=["referrals"])
+# app.include_router(referrals.router, prefix="/referrals", tags=["referrals"])
 # app.include_router(bot_webhook.router, tags=["telegram"])
 
 @app.get("/")

@@ -11,7 +11,7 @@ from sqlalchemy import (
     Text,
     Boolean,
     BigInteger,
-    UniqueConstraint, # <--- Добавил импорт
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -127,7 +127,7 @@ class ChatMessage(Base):
     session: Mapped["ChatSession"] = relationship("ChatSession", back_populates="messages")
 
 
-# -------------------- VIDEO / REFERRALS / FILES / SUBSCRIPTIONS / PAYMENTS --------------------
+# -------------------- VIDEO / FILES / SUBSCRIPTIONS / PAYMENTS --------------------
 
 
 class VideoJob(Base):
@@ -142,18 +142,6 @@ class VideoJob(Base):
     status: Mapped[str] = mapped_column(String(32), default="queued")
     result_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     seconds_billed: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-
-
-class Referral(Base):
-    __tablename__ = "referrals"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    referrer_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    invited_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    bonus_awarded: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -217,15 +205,12 @@ class Payment(Base):
 class CatalogCategory(Base):
     __tablename__ = "catalog_categories"
     
-    # Правильное ограничение: slug уникален ТОЛЬКО в паре с gender
-    # (например, может быть hair/m и hair/f, но не два hair/m)
     __table_args__ = (
         UniqueConstraint('slug', 'gender', name='uq_slug_gender'),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    # Убрал index=True отсюда, чтобы не создавать лишний индекс (хватит UniqueConstraint)
-    slug: Mapped[str] = mapped_column(String(64))  
+    slug: Mapped[str] = mapped_column(String(64), index=True)  
     type: Mapped[str] = mapped_column(String(32))  # 'editor' | 'shoot'
     gender: Mapped[str] = mapped_column(String(16))  # 'm' | 'f' | 'all'
     title_ru: Mapped[str] = mapped_column(String(128))

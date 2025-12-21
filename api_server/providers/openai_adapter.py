@@ -5,6 +5,7 @@ import logging
 import io
 import base64
 import time
+import os  # Добавил импорт os
 
 from openai import OpenAI
 from common.config import settings
@@ -99,9 +100,10 @@ class OpenAIProvider:
         if not self._nano_enabled(): return None
         if Image is None: return None
 
-        # Модели
-        primary_model = getattr(settings, "NANOBANANA_MODEL_IMAGE", "gemini-2.0-flash-exp")
-        fallback_model = getattr(settings, "NANOBANANA_MODEL_IMAGE_FALLBACK", "gemini-1.5-flash") # 1.5 flash часто более лояльна
+        # ИЗМЕНЕНИЕ: Читаем модели напрямую из ENV, чтобы точно взять то, что в .env файле
+        # Если в settings нет атрибута, os.getenv подстрахует.
+        primary_model = os.getenv("NANOBANANA_MODEL_IMAGE") or getattr(settings, "NANOBANANA_MODEL_IMAGE", "gemini-2.0-flash-exp")
+        fallback_model = os.getenv("NANOBANANA_MODEL_IMAGE_FALLBACK") or getattr(settings, "NANOBANANA_MODEL_IMAGE_FALLBACK", "gemini-2.0-flash-exp")
         
         models_to_try = [primary_model]
         if fallback_model and fallback_model != primary_model:
@@ -114,8 +116,7 @@ class OpenAIProvider:
         except Exception:
             return None
 
-        # Конфиг безопасности для google-genai
-        # Используем типы SDK если доступны, иначе dict
+        # Конфиг безопасности
         safety_settings = [
             {'category': 'HARM_CATEGORY_HATE_SPEECH', 'threshold': 'BLOCK_NONE'},
             {'category': 'HARM_CATEGORY_DANGEROUS_CONTENT', 'threshold': 'BLOCK_NONE'},
@@ -123,7 +124,6 @@ class OpenAIProvider:
             {'category': 'HARM_CATEGORY_HARASSMENT', 'threshold': 'BLOCK_NONE'},
         ]
         
-        # Для нового SDK google-genai v1.0
         config = {'safety_settings': safety_settings}
 
         for model_name in models_to_try:
@@ -137,7 +137,6 @@ class OpenAIProvider:
                         config=config
                     )
 
-                    # 1. Проверяем наличие картинки (inline_data)
                     if hasattr(response, 'candidates') and response.candidates:
                         for part in response.candidates[0].content.parts:
                             if part.inline_data and part.inline_data.data:
@@ -149,7 +148,6 @@ class OpenAIProvider:
                                 out_img.save(buf, format="PNG")
                                 return base64.b64encode(buf.getvalue()).decode("utf-8")
                             
-                            # Если картинки нет, но есть текст (отказ)
                             if part.text:
                                 logger.warning(f"⚠️ Model refused with text: {part.text[:100]}...")
 
@@ -157,15 +155,18 @@ class OpenAIProvider:
                     time.sleep(1)
 
                 except Exception as e:
-                    # Ловим 429 и Safety errors
                     err_str = str(e)
+                    # Если 404 - модели нет, сразу пробуем следующую
+                    if "404" in err_str and "NOT_FOUND" in err_str:
+                        logger.error(f"❌ Модель {model_name} не найдена (404). Проверь название в .env")
+                        break # Переход к следующей модели в models_to_try
+                    
                     if "429" in err_str or "Resource exhausted" in err_str:
                         logger.warning(f"🚫 Лимиты {model_name}. Break.")
-                        break # Сразу к следующей модели
+                        break 
+                        
                     logger.warning(f"⚠️ Error {model_name}: {err_str}")
                     time.sleep(1)
-            
-            # Если цикл попыток кончился, идем к следующей модели
             
         return None
 
