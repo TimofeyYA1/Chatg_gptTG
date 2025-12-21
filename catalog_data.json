@@ -9,27 +9,27 @@
         "page_number": 1,
         "image_path": "assets/editor/m/hair/p1.jpg",
         "items": [
-          { "slot": 1, "title": "Шторки", "prompt": "middle part curtains hairstyle, medium length hair, studio portrait, white background", "is_premium": false },
-          { "slot": 2, "title": "Лысый", "prompt": "completely bald head, shaved head, skinhead, studio portrait, white background", "is_premium": false },
-          { "slot": 3, "title": "Кроп", "prompt": "textured french crop haircut, short sides, fade, studio portrait, white background", "is_premium": false },
-          { "slot": 4, "title": "Дреды", "prompt": "medium length dreadlocks hairstyle, studio portrait, white background", "is_premium": true },
-          { "slot": 5, "title": "Маллет 80-х", "prompt": "classic 80s mullet hairstyle, short top long back, retro hair, studio portrait, white background", "is_premium": true },
-          { "slot": 6, "title": "Маллет 2000-х", "prompt": "modern fashion mullet hairstyle, textured hair, studio portrait, white background", "is_premium": true },
-          { "slot": 7, "title": "Длинные волосы", "prompt": "long flowing hair, shoulder length, straight hair, studio portrait, white background", "is_premium": true },
-          { "slot": 8, "title": "Ирокез", "prompt": "short mohawk hairstyle, punk hair, shaved sides, studio portrait, white background", "is_premium": true },
-          { "slot": 9, "title": "Под машинку", "prompt": "short buzz cut, military haircut, very short hair, studio portrait, white background", "is_premium": true }
+          { "slot": 1, "title": "Шторки", "prompt": "middle part curtains hairstyle, medium length hair", "is_premium": false },
+          { "slot": 2, "title": "Лысый", "prompt": "completely bald head, shaved head, skinhead", "is_premium": false },
+          { "slot": 3, "title": "Кроп", "prompt": "textured french crop haircut, short sides, fade", "is_premium": false },
+          { "slot": 4, "title": "Дреды", "prompt": "medium length dreadlocks hairstyle", "is_premium": true },
+          { "slot": 5, "title": "Маллет 80-х", "prompt": "classic 80s mullet hairstyle, short top long back, retro hair", "is_premium": true },
+          { "slot": 6, "title": "Маллет 2000-х", "prompt": "modern fashion mullet hairstyle, textured hair", "is_premium": true },
+          { "slot": 7, "title": "Длинные волосы", "prompt": "long flowing hair, shoulder length, straight hair", "is_premium": true },
+          { "slot": 8, "title": "Ирокез", "prompt": "short mohawk hairstyle, punk hair, shaved sides", "is_premium": true },
+          { "slot": 9, "title": "Под машинку", "prompt": "short buzz cut, military haircut, very short hair", "is_premium": true }
         ]
       },
       {
         "page_number": 2,
         "image_path": "assets/editor/m/hair/p2.jpg",
         "items": [
-          { "slot": 1, "title": "Гаврош", "prompt": "gavroche hairstyle, messy texture, medium length, studio portrait, white background", "is_premium": true },
-          { "slot": 2, "title": "Помпадур", "prompt": "classic pompadour hairstyle, high volume top, rockabilly style, studio portrait, white background", "is_premium": true },
-          { "slot": 3, "title": "Андеркат", "prompt": "undercut hairstyle, slicked back top, shaved sides, studio portrait, white background", "is_premium": true },
-          { "slot": 4, "title": "Шегги", "prompt": "shaggy hairstyle, messy layered hair, medium length, studio portrait, white background", "is_premium": true },
-          { "slot": 5, "title": "Слик Бэк", "prompt": "slicked back hair, wet look, mafia style, studio portrait, white background", "is_premium": true },
-          { "slot": 6, "title": "Кудри", "prompt": "short curly hair, perm hairstyle, textured curls, studio portrait, white background", "is_premium": true }
+          { "slot": 1, "title": "Гаврош", "prompt": "gavroche hairstyle, messy texture, medium length", "is_premium": true },
+          { "slot": 2, "title": "Помпадур", "prompt": "classic pompadour hairstyle, high volume top, rockabilly style", "is_premium": true },
+          { "slot": 3, "title": "Андеркат", "prompt": "undercut hairstyle, slicked back top, shaved sides", "is_premium": true },
+          { "slot": 4, "title": "Шегги", "prompt": "shaggy hairstyle, messy layered hair, medium length", "is_premium": true },
+          { "slot": 5, "title": "Слик Бэк", "prompt": "slicked back hair, wet look, mafia style", "is_premium": true },
+          { "slot": 6, "title": "Кудри", "prompt": "short curly hair, perm hairstyle, textured curls", "is_premium": true }
         ]
       }
     ]
@@ -44,15 +44,15 @@
         "page_number": 1,
         "image_path": "assets/editor/m/color/p1.jpg",
         "items": [
-          { "slot": 1, "title": "Светлый", "prompt": "platinum blonde hair color, studio portrait, white background", "is_premium": false },
-          { "slot": 2, "title": "Неоново-синий", "prompt": "bright neon blue hair dye, vivid color, studio portrait, white background", "is_premium": false },
-          { "slot": 3, "title": "Рыжий", "prompt": "natural ginger hair color, red hair, freckles, studio portrait, white background", "is_premium": true },
-          { "slot": 4, "title": "Черный", "prompt": "jet black hair color, dark hair, studio portrait, white background", "is_premium": true },
-          { "slot": 5, "title": "Кислотно-зеленый", "prompt": "acid green hair dye, bright lime hair, studio portrait, white background", "is_premium": true },
-          { "slot": 6, "title": "Ярко-розовый", "prompt": "hot pink hair dye, magenta hair, studio portrait, white background", "is_premium": true },
-          { "slot": 7, "title": "Каштановый", "prompt": "natural chestnut brown hair color, studio portrait, white background", "is_premium": true },
-          { "slot": 8, "title": "Красный", "prompt": "deep dark red hair dye, cherry red hair, studio portrait, white background", "is_premium": true },
-          { "slot": 9, "title": "Серебристый", "prompt": "silver grey hair, ash blonde, studio portrait, white background", "is_premium": true }
+          { "slot": 1, "title": "Светлый", "prompt": "platinum blonde hair color", "is_premium": false },
+          { "slot": 2, "title": "Неоново-синий", "prompt": "bright neon blue hair dye, vivid color", "is_premium": false },
+          { "slot": 3, "title": "Рыжий", "prompt": "natural ginger hair color, red hair, freckles", "is_premium": true },
+          { "slot": 4, "title": "Черный", "prompt": "jet black hair color, dark hair", "is_premium": true },
+          { "slot": 5, "title": "Кислотно-зеленый", "prompt": "acid green hair dye, bright lime hair", "is_premium": true },
+          { "slot": 6, "title": "Ярко-розовый", "prompt": "hot pink hair dye, magenta hair", "is_premium": true },
+          { "slot": 7, "title": "Каштановый", "prompt": "natural chestnut brown hair color", "is_premium": true },
+          { "slot": 8, "title": "Красный", "prompt": "deep dark red hair dye, cherry red hair", "is_premium": true },
+          { "slot": 9, "title": "Серебристый", "prompt": "silver grey hair, ash blonde", "is_premium": true }
         ]
       }
     ]
@@ -67,12 +67,12 @@
         "page_number": 1,
         "image_path": "assets/editor/m/beard/p1.jpg",
         "items": [
-          { "slot": 1, "title": "Средняя борода", "prompt": "neatly trimmed medium full beard, studio portrait, white background", "is_premium": false },
-          { "slot": 2, "title": "Средняя щетина", "prompt": "heavy stubble, 5 o'clock shadow, studio portrait, white background", "is_premium": true },
-          { "slot": 3, "title": "Короткая борода", "prompt": "short boxed beard, neat beard, studio portrait, white background", "is_premium": true },
-          { "slot": 4, "title": "Небритость", "prompt": "light stubble, 3 day beard, unshaven look, studio portrait, white background", "is_premium": true },
-          { "slot": 5, "title": "Длинная борода", "prompt": "long thick full beard, lumberjack style, studio portrait, white background", "is_premium": true },
-          { "slot": 6, "title": "Эспаньолка", "prompt": "goatee beard, anchor beard, studio portrait, white background", "is_premium": true }
+          { "slot": 1, "title": "Средняя борода", "prompt": "neatly trimmed medium full beard", "is_premium": false },
+          { "slot": 2, "title": "Средняя щетина", "prompt": "heavy stubble, 5 o'clock shadow", "is_premium": true },
+          { "slot": 3, "title": "Короткая борода", "prompt": "short boxed beard, neat beard", "is_premium": true },
+          { "slot": 4, "title": "Небритость", "prompt": "light stubble, 3 day beard, unshaven look", "is_premium": true },
+          { "slot": 5, "title": "Длинная борода", "prompt": "long thick full beard, lumberjack style", "is_premium": true },
+          { "slot": 6, "title": "Эспаньолка", "prompt": "goatee beard, anchor beard", "is_premium": true }
         ]
       }
     ]
@@ -87,12 +87,12 @@
         "page_number": 1,
         "image_path": "assets/editor/m/moustache/p1.jpg",
         "items": [
-          { "slot": 1, "title": "Щеточка", "prompt": "short toothbrush mustache, studio portrait, white background", "is_premium": false },
-          { "slot": 2, "title": "Подкова", "prompt": "horseshoe mustache, biker mustache, studio portrait, white background", "is_premium": true },
-          { "slot": 3, "title": "Закрученные", "prompt": "handlebar mustache, curled ends, vintage style, studio portrait, white background", "is_premium": true },
-          { "slot": 4, "title": "Морж", "prompt": "thick walrus mustache, bushy mustache covering lip, studio portrait, white background", "is_premium": true },
-          { "slot": 5, "title": "Натуральные", "prompt": "natural chevron mustache, thick mustache, studio portrait, white background", "is_premium": true },
-          { "slot": 6, "title": "Зорро", "prompt": "thin pencil mustache, zorro style, studio portrait, white background", "is_premium": true }
+          { "slot": 1, "title": "Щеточка", "prompt": "short toothbrush mustache", "is_premium": false },
+          { "slot": 2, "title": "Подкова", "prompt": "horseshoe mustache, biker mustache", "is_premium": true },
+          { "slot": 3, "title": "Закрученные", "prompt": "handlebar mustache, curled ends, vintage style", "is_premium": true },
+          { "slot": 4, "title": "Морж", "prompt": "thick walrus mustache, bushy mustache covering lip", "is_premium": true },
+          { "slot": 5, "title": "Натуральные", "prompt": "natural chevron mustache, thick mustache", "is_premium": true },
+          { "slot": 6, "title": "Зорро", "prompt": "thin pencil mustache, zorro style", "is_premium": true }
         ]
       }
     ]
@@ -107,10 +107,10 @@
         "page_number": 1,
         "image_path": "assets/editor/m/glasses/p1.jpg",
         "items": [
-          { "slot": 1, "title": "Черная оправа", "prompt": "wearing classic black rimmed eyeglasses, studio portrait, white background", "is_premium": false },
-          { "slot": 2, "title": "Спортивные", "prompt": "wearing black sport sunglasses, fast glasses, cyclops glasses, studio portrait, white background", "is_premium": true },
-          { "slot": 3, "title": "Хипстерские", "prompt": "wearing transparent frame glasses, hipster style, studio portrait, white background", "is_premium": true },
-          { "slot": 4, "title": "Круглые винтажные", "prompt": "wearing round tortoise shell glasses, vintage intellectual style, studio portrait, white background", "is_premium": true }
+          { "slot": 1, "title": "Черная оправа", "prompt": "wearing classic black rimmed eyeglasses", "is_premium": false },
+          { "slot": 2, "title": "Спортивные", "prompt": "wearing black sport sunglasses, fast glasses, cyclops glasses", "is_premium": true },
+          { "slot": 3, "title": "Хипстерские", "prompt": "wearing transparent frame glasses, hipster style", "is_premium": true },
+          { "slot": 4, "title": "Круглые винтажные", "prompt": "wearing round tortoise shell glasses, vintage intellectual style", "is_premium": true }
         ]
       }
     ]
@@ -125,15 +125,15 @@
         "page_number": 1,
         "image_path": "assets/editor/m/piercing/p1.jpg",
         "items": [
-          { "slot": 1, "title": "Туннели", "prompt": "black ear gauges, large tunnels in ears, studio portrait, white background", "is_premium": false },
-          { "slot": 2, "title": "Бровь", "prompt": "silver eyebrow piercing ring, studio portrait, white background", "is_premium": false },
-          { "slot": 3, "title": "Кольцо (правое)", "prompt": "small silver hoop earring in right ear, studio portrait, white background", "is_premium": true },
-          { "slot": 4, "title": "Кольца (оба уха)", "prompt": "small silver hoop earrings in both ears, studio portrait, white background", "is_premium": true },
-          { "slot": 5, "title": "Кольцо (левое)", "prompt": "small silver hoop earring in left ear, studio portrait, white background", "is_premium": true },
-          { "slot": 6, "title": "Нос (сбоку)", "prompt": "small silver nose ring nostril piercing, studio portrait, white background", "is_premium": true },
-          { "slot": 7, "title": "Нос (септум)", "prompt": "silver septum nose ring, bull ring piercing, studio portrait, white background", "is_premium": true },
-          { "slot": 8, "title": "Губа (сбоку)", "prompt": "silver lip ring piercing side, studio portrait, white background", "is_premium": true },
-          { "slot": 9, "title": "Снейк байтс", "prompt": "snake bites lip piercing, two rings on lower lip, studio portrait, white background", "is_premium": true }
+          { "slot": 1, "title": "Туннели", "prompt": "black ear gauges, large tunnels in ears", "is_premium": false },
+          { "slot": 2, "title": "Бровь", "prompt": "silver eyebrow piercing ring", "is_premium": false },
+          { "slot": 3, "title": "Кольцо (правое)", "prompt": "small silver hoop earring in right ear", "is_premium": true },
+          { "slot": 4, "title": "Кольца (оба уха)", "prompt": "small silver hoop earrings in both ears", "is_premium": true },
+          { "slot": 5, "title": "Кольцо (левое)", "prompt": "small silver hoop earring in left ear", "is_premium": true },
+          { "slot": 6, "title": "Нос (сбоку)", "prompt": "small silver nose ring nostril piercing", "is_premium": true },
+          { "slot": 7, "title": "Нос (септум)", "prompt": "silver septum nose ring, bull ring piercing", "is_premium": true },
+          { "slot": 8, "title": "Губа (сбоку)", "prompt": "silver lip ring piercing side", "is_premium": true },
+          { "slot": 9, "title": "Снейк байтс", "prompt": "snake bites lip piercing, two rings on lower lip", "is_premium": true }
         ]
       }
     ]
@@ -277,30 +277,30 @@
         "page_number": 1,
         "image_path": "assets/editor/f/hair/p1.jpg",
         "items": [
-          { "slot": 1, "title": "Боб", "prompt": "classic soft bob hairstyle, chin length, studio portrait, white background", "is_premium": false },
-          { "slot": 2, "title": "Хвост", "prompt": "slicked back high ponytail hairstyle, sleek hair, studio portrait, white background", "is_premium": false },
-          { "slot": 3, "title": "Под машинку", "prompt": "buzz cut hairstyle for woman, very short hair, studio portrait, white background", "is_premium": false },
-          { "slot": 4, "title": "Маллет 2000-х", "prompt": "modern mullet hairstyle woman, textured layers, studio portrait, white background", "is_premium": true },
-          { "slot": 5, "title": "Дреды", "prompt": "long dreadlocks hairstyle woman, studio portrait, white background", "is_premium": true },
-          { "slot": 6, "title": "Афро-косы", "prompt": "full head afro braids hairstyle, studio portrait, white background", "is_premium": true },
-          { "slot": 7, "title": "Пикси", "prompt": "short pixie cut hairstyle, blonde hair, studio portrait, white background", "is_premium": true },
-          { "slot": 8, "title": "Каре", "prompt": "sharp bob haircut with straight bangs, kare style, dark hair, studio portrait, white background", "is_premium": true },
-          { "slot": 9, "title": "Зачесанные назад", "prompt": "short slicked back hair woman, wet look, studio portrait, white background", "is_premium": true }
+          { "slot": 1, "title": "Боб", "prompt": "classic soft bob hairstyle, chin length", "is_premium": false },
+          { "slot": 2, "title": "Хвост", "prompt": "slicked back high ponytail hairstyle, sleek hair", "is_premium": false },
+          { "slot": 3, "title": "Под машинку", "prompt": "buzz cut hairstyle for woman, very short hair", "is_premium": false },
+          { "slot": 4, "title": "Маллет 2000-х", "prompt": "modern mullet hairstyle woman, textured layers", "is_premium": true },
+          { "slot": 5, "title": "Дреды", "prompt": "long dreadlocks hairstyle woman", "is_premium": true },
+          { "slot": 6, "title": "Афро-косы", "prompt": "full head afro braids hairstyle", "is_premium": true },
+          { "slot": 7, "title": "Пикси", "prompt": "short pixie cut hairstyle, blonde hair", "is_premium": true },
+          { "slot": 8, "title": "Каре", "prompt": "sharp bob haircut with straight bangs, kare style, dark hair", "is_premium": true },
+          { "slot": 9, "title": "Зачесанные назад", "prompt": "short slicked back hair woman, wet look", "is_premium": true }
         ]
       },
       {
         "page_number": 2,
         "image_path": "assets/editor/f/hair/p2.jpg",
         "items": [
-          { "slot": 1, "title": "Длинные волнистые", "prompt": "long wavy hair, loose curls, volume, studio portrait, white background", "is_premium": true },
-          { "slot": 2, "title": "Каскад", "prompt": "layered cascade haircut, face framing layers, studio portrait, white background", "is_premium": true },
-          { "slot": 3, "title": "Шегги", "prompt": "shaggy hairstyle woman, messy layers, shoulder length, studio portrait, white background", "is_premium": true },
-          { "slot": 4, "title": "В стиле 90-х", "prompt": "90s voluminous blowout hair, supermodel hair, studio portrait, white background", "is_premium": true },
-          { "slot": 5, "title": "Пучок с челкой", "prompt": "messy bun high up, wispy bangs, casual style, studio portrait, white background", "is_premium": true },
-          { "slot": 6, "title": "Французский боб", "prompt": "french bob hairstyle, short with bangs, wavy texture, studio portrait, white background", "is_premium": true },
-          { "slot": 7, "title": "Две косы", "prompt": "two braided pigtails, cute style, studio portrait, white background", "is_premium": true },
-          { "slot": 8, "title": "Волчица", "prompt": "wolf cut hairstyle, choppy layers, mullet hybrid, studio portrait, white background", "is_premium": true },
-          { "slot": 9, "title": "Кудри", "prompt": "voluminous curly hair, spiral perm, texture, studio portrait, white background", "is_premium": true }
+          { "slot": 1, "title": "Длинные волнистые", "prompt": "long wavy hair, loose curls, volume", "is_premium": true },
+          { "slot": 2, "title": "Каскад", "prompt": "layered cascade haircut, face framing layers", "is_premium": true },
+          { "slot": 3, "title": "Шегги", "prompt": "shaggy hairstyle woman, messy layers, shoulder length", "is_premium": true },
+          { "slot": 4, "title": "В стиле 90-х", "prompt": "90s voluminous blowout hair, supermodel hair", "is_premium": true },
+          { "slot": 5, "title": "Пучок с челкой", "prompt": "messy bun high up, wispy bangs, casual style", "is_premium": true },
+          { "slot": 6, "title": "Французский боб", "prompt": "french bob hairstyle, short with bangs, wavy texture", "is_premium": true },
+          { "slot": 7, "title": "Две косы", "prompt": "two braided pigtails, cute style", "is_premium": true },
+          { "slot": 8, "title": "Волчица", "prompt": "wolf cut hairstyle, choppy layers, mullet hybrid", "is_premium": true },
+          { "slot": 9, "title": "Кудри", "prompt": "voluminous curly hair, spiral perm, texture", "is_premium": true }
         ]
       }
     ]
@@ -315,15 +315,15 @@
         "page_number": 1,
         "image_path": "assets/editor/f/color/p1.jpg",
         "items": [
-          { "slot": 1, "title": "Светлый", "prompt": "platinum blonde hair color, studio portrait, white background", "is_premium": false },
-          { "slot": 2, "title": "Неоново-синий", "prompt": "bright neon blue hair dye, vivid color, studio portrait, white background", "is_premium": false },
-          { "slot": 3, "title": "Рыжий", "prompt": "natural ginger hair color, red hair, freckles, studio portrait, white background", "is_premium": true },
-          { "slot": 4, "title": "Черный", "prompt": "jet black hair color, dark hair, studio portrait, white background", "is_premium": true },
-          { "slot": 5, "title": "Кислотно-зеленый", "prompt": "acid green hair dye, bright lime hair, studio portrait, white background", "is_premium": true },
-          { "slot": 6, "title": "Ярко-розовый", "prompt": "hot pink hair dye, magenta hair, studio portrait, white background", "is_premium": true },
-          { "slot": 7, "title": "Каштановый", "prompt": "natural chestnut brown hair color, studio portrait, white background", "is_premium": true },
-          { "slot": 8, "title": "Красный", "prompt": "deep dark red hair dye, cherry red hair, studio portrait, white background", "is_premium": true },
-          { "slot": 9, "title": "Серебристый", "prompt": "silver grey hair, ash blonde, studio portrait, white background", "is_premium": true }
+          { "slot": 1, "title": "Светлый", "prompt": "platinum blonde hair color", "is_premium": false },
+          { "slot": 2, "title": "Неоново-синий", "prompt": "bright neon blue hair dye, vivid color", "is_premium": false },
+          { "slot": 3, "title": "Рыжий", "prompt": "natural ginger hair color, red hair, freckles", "is_premium": true },
+          { "slot": 4, "title": "Черный", "prompt": "jet black hair color, dark hair", "is_premium": true },
+          { "slot": 5, "title": "Кислотно-зеленый", "prompt": "acid green hair dye, bright lime hair", "is_premium": true },
+          { "slot": 6, "title": "Ярко-розовый", "prompt": "hot pink hair dye, magenta hair", "is_premium": true },
+          { "slot": 7, "title": "Каштановый", "prompt": "natural chestnut brown hair color", "is_premium": true },
+          { "slot": 8, "title": "Красный", "prompt": "deep dark red hair dye, cherry red hair", "is_premium": true },
+          { "slot": 9, "title": "Серебристый", "prompt": "silver grey hair, ash blonde", "is_premium": true }
         ]
       }
     ]
@@ -338,12 +338,12 @@
         "page_number": 1,
         "image_path": "assets/editor/f/makeup/p1.jpg",
         "items": [
-          { "slot": 1, "title": "Южнокорейский", "prompt": "soft korean k-pop style makeup, peach eyeshadow, gradient lips, dewy skin, studio portrait", "is_premium": false },
-          { "slot": 2, "title": "Вечерний", "prompt": "glamorous evening makeup, dark red lipstick, dark smokey eyes, contouring, studio portrait", "is_premium": true },
-          { "slot": 3, "title": "Глянцевый", "prompt": "glossy skin makeup, glass skin trend, clear lip gloss, highlighter, fresh look, studio portrait", "is_premium": true },
-          { "slot": 4, "title": "Фестивальный", "prompt": "euphoria style creative makeup, colorful graphic eyeliner, face gems, glitter, studio portrait", "is_premium": true },
-          { "slot": 5, "title": "Французский", "prompt": "classic french girl makeup, perfect red lipstick, minimal eye makeup, natural skin, studio portrait", "is_premium": true },
-          { "slot": 6, "title": "Легкий дневной", "prompt": "clean girl aesthetic, no makeup makeup look, fresh glowing face, natural eyebrows, studio portrait", "is_premium": true }
+          { "slot": 1, "title": "Южнокорейский", "prompt": "soft korean k-pop style makeup, peach eyeshadow, gradient lips, dewy skin", "is_premium": false },
+          { "slot": 2, "title": "Вечерний", "prompt": "glamorous evening makeup, dark red lipstick, dark smokey eyes, contouring", "is_premium": true },
+          { "slot": 3, "title": "Глянцевый", "prompt": "glossy skin makeup, glass skin trend, clear lip gloss, highlighter, fresh look", "is_premium": true },
+          { "slot": 4, "title": "Фестивальный", "prompt": "euphoria style creative makeup, colorful graphic eyeliner, face gems, glitter", "is_premium": true },
+          { "slot": 5, "title": "Французский", "prompt": "classic french girl makeup, perfect red lipstick, minimal eye makeup, natural skin", "is_premium": true },
+          { "slot": 6, "title": "Легкий дневной", "prompt": "clean girl aesthetic, no makeup makeup look, fresh glowing face, natural eyebrows", "is_premium": true }
         ]
       }
     ]
@@ -358,12 +358,12 @@
         "page_number": 1,
         "image_path": "assets/editor/f/piercing/p1.jpg",
         "items": [
-          { "slot": 1, "title": "Гвоздики", "prompt": "small diamond stud earrings, studio portrait, white background", "is_premium": false },
-          { "slot": 2, "title": "Туннели", "prompt": "ear gauges, tunnels in ears, alternative style, studio portrait, white background", "is_premium": true },
-          { "slot": 3, "title": "Бровь", "prompt": "silver eyebrow piercing ring, studio portrait, white background", "is_premium": true },
-          { "slot": 4, "title": "Нос (сбоку)", "prompt": "tiny diamond nose stud piercing, studio portrait, white background", "is_premium": true },
-          { "slot": 5, "title": "Нос (септум)", "prompt": "silver septum nose ring with gems, studio portrait, white background", "is_premium": true },
-          { "slot": 6, "title": "Губа (сбоку)", "prompt": "silver lip ring piercing side, studio portrait, white background", "is_premium": true }
+          { "slot": 1, "title": "Гвоздики", "prompt": "small diamond stud earrings", "is_premium": false },
+          { "slot": 2, "title": "Туннели", "prompt": "ear gauges, tunnels in ears, alternative style", "is_premium": true },
+          { "slot": 3, "title": "Бровь", "prompt": "silver eyebrow piercing ring", "is_premium": true },
+          { "slot": 4, "title": "Нос (сбоку)", "prompt": "tiny diamond nose stud piercing", "is_premium": true },
+          { "slot": 5, "title": "Нос (септум)", "prompt": "silver septum nose ring with gems", "is_premium": true },
+          { "slot": 6, "title": "Губа (сбоку)", "prompt": "silver lip ring piercing side", "is_premium": true }
         ]
       }
     ]
@@ -378,10 +378,10 @@
         "page_number": 1,
         "image_path": "assets/editor/f/glasses/p1.jpg",
         "items": [
-          { "slot": 1, "title": "Черная оправа", "prompt": "wearing classic black rimmed cat-eye eyeglasses, studio portrait, white background", "is_premium": false },
-          { "slot": 2, "title": "Спортивные очки", "prompt": "wearing futuristic sport sunglasses, fast glasses, fashion wrap around, studio portrait, white background", "is_premium": true },
-          { "slot": 3, "title": "Хипстерские", "prompt": "wearing large transparent frame glasses, hipster style, studio portrait, white background", "is_premium": true },
-          { "slot": 4, "title": "Круглые винтажные", "prompt": "wearing round tortoise shell glasses, vintage style, studio portrait, white background", "is_premium": true }
+          { "slot": 1, "title": "Черная оправа", "prompt": "wearing classic black rimmed cat-eye eyeglasses", "is_premium": false },
+          { "slot": 2, "title": "Спортивные очки", "prompt": "wearing futuristic sport sunglasses, fast glasses, fashion wrap around", "is_premium": true },
+          { "slot": 3, "title": "Хипстерские", "prompt": "wearing large transparent frame glasses, hipster style", "is_premium": true },
+          { "slot": 4, "title": "Круглые винтажные", "prompt": "wearing round tortoise shell glasses, vintage style", "is_premium": true }
         ]
       }
     ]
@@ -476,7 +476,7 @@
         ]
       }
     ]
-  }, 
+  },
   {
     "slug": "winter",
     "type": "shoot",

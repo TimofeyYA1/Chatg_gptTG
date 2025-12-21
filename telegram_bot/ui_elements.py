@@ -119,7 +119,7 @@ CB_SHOOT_PICK = "shoot:pick"
 
 TEXTS = {
     "ru": {
-        "start_title": "✨ <b>MyLook</b> — AI-лаборатория внешности в Telegram.",
+        "start_title": "✨ <b>BeautyAIMasterBot</b> — AI-лаборатория внешности в Telegram.",
         "start_sub": "Примеряй стили и тренды за пару кликов — без промптов и приложений.",
         "pick_lang": "Выберите язык / Choose language:",
         "pick_gender": "🟡 Выбери свой пол:",
@@ -127,7 +127,7 @@ TEXTS = {
         "photo_ok": "Фото принято ✅ Теперь выбирай режим:",
         "gen_wait": "⏳ <b>Обрабатываем ваше фото...</b>",
         "new_photo_req": "📸 Пожалуйста, пришлите новую фотографию.",
-        "result_caption": "Made with ❤️ by @MyLook",
+        "result_caption": "Made with ❤️ by @BeautyAIMasterBot",
     },
 }
 
@@ -392,7 +392,7 @@ def kb_premium_paywall(lang: str = "ru") -> InlineKeyboardMarkup:
         ]
     )
 
-def kb_premium_active(user_id: int, bot_name: str = "mylookbot", auto_renew: bool = True, show_edit_btn: bool = False) -> InlineKeyboardMarkup:
+def kb_premium_active(user_id: int, bot_name: str = "BeautyAIMasterBotbot", auto_renew: bool = True, show_edit_btn: bool = False) -> InlineKeyboardMarkup:
     """Кнопки под активной подпиской."""
     ref_link = f"https://t.me/{bot_name}?start={user_id}"
     rows = []
