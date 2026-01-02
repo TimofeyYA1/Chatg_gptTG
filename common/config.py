@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     # --- базовые ---
     APP_NAME: str = "AI SuperBot API"
     ALLOWED_ORIGINS: str = "*"
+    
+    # Публичный URL API (нужен для генерации ссылок на оплату в боте)
+    # Например: https://api.mysite.com или http://123.45.67.89:8000
+    API_PUBLIC_URL: str = Field("http://localhost:8000", validation_alias=AliasChoices("API_PUBLIC_URL", "api_public_url"))
 
     # --- Postgres ---
     DB_HOST: str = Field("db", validation_alias=AliasChoices("DB_HOST", "db_host"))
@@ -23,6 +27,10 @@ class Settings(BaseSettings):
     # --- Telegram ---
     TELEGRAM_BOT_TOKEN: str = Field("", validation_alias=AliasChoices("TELEGRAM_BOT_TOKEN", "telegram_bot_token"))
     BOT_NAME: str = Field("ai_superbot", validation_alias=AliasChoices("BOT_NAME", "bot_name"))
+
+    # --- CloudPayments ---
+    CLOUDPAYMENTS_PUBLIC_ID: str = Field("", validation_alias=AliasChoices("CLOUDPAYMENTS_PUBLIC_ID", "cloudpayments_public_id"))
+    CLOUDPAYMENTS_API_SECRET: str = Field("", validation_alias=AliasChoices("CLOUDPAYMENTS_API_SECRET", "cloudpayments_api_secret"))
 
     # --- OpenAI (текст + fallback для картинок) ---
     OPENAI_API_KEY: str = Field("", validation_alias=AliasChoices("OPENAI_API_KEY", "openai_api_key"))
@@ -67,6 +75,11 @@ class Settings(BaseSettings):
         "gemini-2.5-flash-image",
         validation_alias=AliasChoices("NANOBANANA_MODEL_IMAGE", "nanobanana_model_image"),
     )
+    
+    DEEPGRAM_API_KEY: str = Field(
+        'None',
+        validation_alias=AliasChoices("DEEPGRAM_API_KEY", "DEEPGRAM_API_KEY"),
+    )
 
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,
@@ -74,11 +87,6 @@ class Settings(BaseSettings):
         populate_by_name=True,
         extra="ignore",
     )
-    DEEPGRAM_API_KEY: str = Field(
-        'None',
-        validation_alias=AliasChoices("DEEPGRAM_API_KEY", "DEEPGRAM_API_KEY"),
-    )
-
 
 
 settings = Settings()

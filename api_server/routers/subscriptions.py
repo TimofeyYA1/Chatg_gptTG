@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from common.config import settings
 from db_adapter.database import get_db
 from db_adapter.models import User, Subscription, PremiumCredits
+from api_server.services.cloudpayments import cp_service 
 
 
 router = APIRouter(tags=["subscriptions"])
@@ -165,12 +166,22 @@ def set_plan(payload: SetPlanIn, db: Session = Depends(get_db)):
     return {"ok": True, "plan": plan}
 
 @router.post("/cancel")
-def cancel(payload: dict, db: Session = Depends(get_db)):
+async def cancel(payload: dict, db: Session = Depends(get_db)):
     try: chat_id = int(payload["chat_id"])
     except: raise HTTPException(400, "invalid payload")
+    
     user = _get_or_create_user(db, chat_id)
     sub = _get_sub(db, user.id)
+    
     if not sub: raise HTTPException(400, "no sub")
+    
+    # 1. Отменяем в CloudPayments (если есть ID)
+    if sub.cp_sub_id:
+        await cp_service.cancel_subscription(sub.cp_sub_id)
+        sub.cp_sub_id = None # Стираем ID, так как подписка убита в CP
+
+    # 2. Обновляем локально
     sub.cancel_at_period_end = True
     db.commit()
+    
     return {"ok": True}

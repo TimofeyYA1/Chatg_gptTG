@@ -21,7 +21,8 @@ from aiogram.types import (
     Message, CallbackQuery,
     FSInputFile, BufferedInputFile, 
     ReplyKeyboardRemove, InputMediaPhoto,
-    LabeledPrice, PreCheckoutQuery, ContentType
+    LabeledPrice, PreCheckoutQuery, ContentType,
+    InlineKeyboardMarkup, InlineKeyboardButton
 )
 from aiogram.exceptions import TelegramNetworkError, TelegramBadRequest
 from datetime import timedelta 
@@ -335,31 +336,47 @@ async def cancel_payment_click(call: CallbackQuery, state: FSMContext):
     await premium_cmd(call.message, state, is_edit=True)
     await call.answer("Отменено")
 
-# 3. Handle RUB Selection (STUB - Instant Success)
+# -------------------- 3. Handle RUB Selection (DIRECT REDIRECT) --------------------
+
 @router.callback_query(F.data.startswith("pay_rub:"))
 async def on_pay_choice_rub(call: CallbackQuery, state: FSMContext):
     # data: pay_rub:{price}:{payload}
     parts = call.data.split(":")
     price_rub = int(parts[1])
-    payload = ":".join(parts[2:]) # e.g. "plan:Week" or "pkg:150"
+    payload = ":".join(parts[2:]) # plan:Week или pkg:150
     
-    # Генерируем текст подтверждения
+    uid = call.from_user.id
+    
+    # 1. Разбираем payload
+    try:
+        ptype, pvalue = payload.split(":")
+    except ValueError:
+        await call.answer("Ошибка данных", show_alert=True)
+        return
+    
+    # 2. Сразу формируем ссылку на оплату
+    api_url = settings.API_PUBLIC_URL 
+    if not api_url.startswith("http"):
+        api_url = "http://localhost:8000"
+        
+    payment_link = f"{api_url}/payments/checkout?chat_id={uid}&type={ptype}&value={pvalue}"
+    
+    # 3. Генерируем текст подтверждения (как на фото 2)
     caption = ""
     
-    if payload.startswith("plan:"):
-        plan_key = payload.split(":")[1]
-        
-        # Расчет даты следующего списания (примерный, для отображения)
+    # Текст для Подписки
+    if ptype == "plan":
+        # Считаем дату следующего списания для красоты
         now = datetime.now()
-        if plan_key == "Week":
+        if pvalue == "Week":
             next_date = now + timedelta(days=7)
             period_str = "7 дней"
-            count_str = "150" # Хардкод для красоты или брать из конфига
-        elif plan_key == "Month":
+            count_str = "150"
+        elif pvalue == "Month":
             next_date = now + timedelta(days=30)
             period_str = "месяц"
             count_str = "600"
-        elif plan_key == "Year":
+        elif pvalue == "Year":
             next_date = now + timedelta(days=365)
             period_str = "год"
             count_str = "7200"
@@ -370,82 +387,76 @@ async def on_pay_choice_rub(call: CallbackQuery, state: FSMContext):
 
         next_date_str = next_date.strftime("%d.%m.%Y %H:%M MSK")
         
-        caption = ui.TEXT_PAYMENT_CONFIRMATION_RUB.format(
-            period=period_str,
-            count=count_str,
-            price=price_rub,
-            next_date=next_date_str,
-            link_recurring=ui.LINK_RECURRING_RULES
+        caption = (
+            f"Вы приобретаете пакет: <b>Премиум на {period_str}\n({count_str} генераций) - {price_rub}₽</b>\n"
+            f"Следующее списание: {next_date_str} - {price_rub}₽\n\n"
+            f"Нажимая «Оплатить», вы соглашаетесь с <a href='{ui.LINK_RECURRING_RULES}'>Правилами приема рекуррентных платежей</a>. "
+            f"Вы сможете отменить подписку в любой момент.\n\n"
+            f"🔒 Мы используем надежный платежный сервис CloudPayments. Мы не храним ваши платежные данные."
         )
         
-    elif payload.startswith("pkg:"):
-        # Для пакетов текст проще, так как это не подписка
-        qty = payload.split(":")[1]
+    # Текст для Пакетов (не подписка)
+    elif ptype == "pkg":
         caption = (
-            f"Вы приобретаете пакет: <b>{qty} генераций - {price_rub}₽</b>\n\n"
-            f"🔒 Платеж через сервис Avanpay."
+            f"Вы приобретаете пакет: <b>{pvalue} генераций - {price_rub}₽</b>\n\n"
+            f"Нажимая «Оплатить», вы переходите к безопасной оплате.\n\n"
+            f"🔒 Платеж через сервис CloudPayments."
         )
 
-    # Показываем экран подтверждения
+    # 4. Клавиатура: Кнопка "Оплатить" уже содержит ссылку!
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Оплатить", url=payment_link)], # <--- ССЫЛКА ЗДЕСЬ
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="cancel_payment")]
+    ])
+
+    # 5. Показываем экран подтверждения
+    # Мы не используем call.answer(url=...), чтобы не кидать сразу, 
+    # а даем юзеру прочитать условия.
     await panel_edit_media(
         call, state, 
-        img_ui("premium"), # Можно использовать другую картинку, если есть
+        img_ui("premium"), # Картинка остается та же
         caption, 
-        kb=ui.kb_pay_rub_confirm(price_rub, payload)
+        kb=kb
     )
     await call.answer()
 
-# 3.1. Execute RUB Payment (When user clicks "Оплатить")
+
+# 3.1. Execute RUB Payment (Generate Link)
 @router.callback_query(F.data.startswith("do_pay_rub:"))
 async def on_pay_rub_execute(call: CallbackQuery, state: FSMContext):
     # data: do_pay_rub:{price}:{payload}
     parts = call.data.split(":")
-    price_rub = int(parts[1])
-    payload = ":".join(parts[2:])
+    # price_rub = int(parts[1]) # Цена есть в ссылке, тут не обязательна
+    payload = ":".join(parts[2:]) # plan:Week или pkg:150
     
     uid = call.from_user.id
-    if uid in BUY_LOCK: await call.answer("⏳ Обработка...", show_alert=True); return
-    BUY_LOCK.add(uid)
-
+    
+    # Разбираем payload
     try:
-        # Имитация процесса оплаты (здесь была бы ссылка на банк)
-        await call.message.edit_caption(caption="🔄 Обработка платежа...", reply_markup=None)
-        await asyncio.sleep(1.5) # Имитация задержки
+        ptype, pvalue = payload.split(":")
+    except ValueError:
+        await call.answer("Ошибка данных", show_alert=True)
+        return
+    
+    # Формируем ссылку на наш API
+    api_url = settings.API_PUBLIC_URL 
+    if not api_url.startswith("http"):
+        api_url = "http://localhost:8000" # Fallback
+        
+    payment_link = f"{api_url}/payments/checkout?chat_id={uid}&type={ptype}&value={pvalue}"
+    
+    # Отправляем кнопку-ссылку
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Перейти к оплате", url=payment_link)],
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="cancel_payment")]
+    ])
+    
+    await call.message.edit_caption(
+        caption="🚀 <b>Ссылка сформирована!</b>\n\nНажмите кнопку ниже, чтобы оплатить картой через безопасный шлюз.",
+        reply_markup=kb
+    )
+    await call.answer()
 
-        if payload.startswith("plan:"):
-            period = payload.split(":")[1]
-            # 1. Пополняем баланс
-            await api_client.balance_topup(uid, price_rub * 100) 
-            # 2. Активируем план
-            res = await api_client.set_plan(uid, period=period)
-            if res.get("error"):
-                await call.message.answer(f"Ошибка активации: {res.get('detail', '')}")
-                # Возвращаем меню
-                await premium_cmd(call.message, state, is_edit=False)
-            else:
-                await call.answer("Оплата успешна! ✅", show_alert=True)
-                # Удаляем сообщение с процессом оплаты и показываем красивый профиль
-                try: await call.message.delete()
-                except: pass
-                await premium_cmd(call.message, state, is_edit=False, show_edit_btn=True)
-
-        elif payload.startswith("pkg:"):
-            pkg_qty = int(payload.split(":")[1])
-            await api_client.balance_topup(uid, price_rub * 100)
-            res = await api_client.buy_addon(uid, pkg_qty, price_rub * 100)
-            if res.get("ok"):
-                await call.answer(f"✅ Успешно добавлено {pkg_qty} генераций!", show_alert=True)
-                try: await call.message.delete()
-                except: pass
-                await premium_cmd(call.message, state, is_edit=False)
-            else:
-                await call.message.answer(f"Ошибка: {res.get('detail', 'Error')}")
-
-    except Exception as e:
-        print(f"Rub Payment Error: {e}")
-        await call.answer("Ошибка обработки платежа", show_alert=True)
-    finally:
-        BUY_LOCK.discard(uid)
 
 # 4. Handle STARS Selection (Send Invoice + Clean up)
 @router.callback_query(F.data.startswith("pay_stars:"))

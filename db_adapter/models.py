@@ -169,12 +169,16 @@ class Subscription(Base):
         index=True,
     )
 
-    plan: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)  # "Light" | "Max" | "Ultra"
+    plan: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)  # "Week" | "Month" | "Year"
     status: Mapped[str] = mapped_column(String(32), default="active")       # "active" | "canceled"
     current_period_end: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # --- НОВОЕ ПОЛЕ ДЛЯ CLOUDPAYMENTS ---
+    cp_sub_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True) # ID рекуррентной подписки
+    # ------------------------------------
 
     # legacy-поля
     stars_plan_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
@@ -185,7 +189,6 @@ class Subscription(Base):
     )
     
     user: Mapped["User"] = relationship("User", back_populates="subscription")
-
 
 class Payment(Base):
     __tablename__ = "payments"
