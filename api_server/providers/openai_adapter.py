@@ -1,11 +1,11 @@
 from __future__ import annotations
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 
 import logging
 import io
 import base64
 import time
-import os  # Добавил импорт os
+import os
 
 from openai import OpenAI
 from common.config import settings
@@ -96,12 +96,19 @@ class OpenAIProvider:
 
     # ------------- IMAGE -------------
 
-    def _edit_image_with_nano(self, image_bytes: bytes, prompt: str) -> str | None:
-        if not self._nano_enabled(): return None
-        if Image is None: return None
+    def _edit_image_with_nano(self, image_bytes: bytes, prompt: str) -> Dict[str, Any]:
+        """
+        Возвращает словарь:
+        {
+            "b64": str | None,
+            "reason": str | None  # код ошибки (safety_filter, api_error и т.д.)
+        }
+        """
+        if not self._nano_enabled(): 
+            return {"b64": None, "reason": "provider_disabled"}
+        if Image is None: 
+            return {"b64": None, "reason": "pillow_missing"}
 
-        # ИЗМЕНЕНИЕ: Читаем модели напрямую из ENV, чтобы точно взять то, что в .env файле
-        # Если в settings нет атрибута, os.getenv подстрахует.
         primary_model = os.getenv("NANOBANANA_MODEL_IMAGE") or getattr(settings, "NANOBANANA_MODEL_IMAGE", "gemini-2.0-flash-exp")
         fallback_model = os.getenv("NANOBANANA_MODEL_IMAGE_FALLBACK") or getattr(settings, "NANOBANANA_MODEL_IMAGE_FALLBACK", "gemini-2.0-flash-exp")
         
@@ -114,7 +121,7 @@ class OpenAIProvider:
         try:
             img = Image.open(io.BytesIO(image_bytes))
         except Exception:
-            return None
+            return {"b64": None, "reason": "invalid_image_file"}
 
         # Конфиг безопасности
         safety_settings = [
@@ -125,6 +132,8 @@ class OpenAIProvider:
         ]
         
         config = {'safety_settings': safety_settings}
+        
+        last_error = "unknown_error"
 
         for model_name in models_to_try:
             for attempt in range(1, max_retries + 1):
@@ -137,21 +146,48 @@ class OpenAIProvider:
                         config=config
                     )
 
-                    if hasattr(response, 'candidates') and response.candidates:
-                        for part in response.candidates[0].content.parts:
-                            if part.inline_data and part.inline_data.data:
-                                # УСПЕХ
-                                raw = part.inline_data.data
-                                if isinstance(raw, str): raw = base64.b64decode(raw)
-                                out_img = Image.open(io.BytesIO(raw))
-                                buf = io.BytesIO()
-                                out_img.save(buf, format="PNG")
-                                return base64.b64encode(buf.getvalue()).decode("utf-8")
-                            
-                            if part.text:
-                                logger.warning(f"⚠️ Model refused with text: {part.text[:100]}...")
+                    # 1. Если кандидатов нет вообще (Жесткий фильтр на входе)
+                    if not response.candidates:
+                        logger.warning(f"⚠️ Пустой ответ от {model_name} (Safety filter?)")
+                        last_error = "safety_filter"
+                        break 
 
-                    logger.warning(f"⚠️ Пустой ответ от {model_name} (Safety filter?)")
+                    # 2. Берем первого кандидата
+                    candidate = response.candidates[0]
+
+                    # 3. ВАЖНАЯ ПРОВЕРКА: Есть ли контент внутри кандидата?
+                    # Если модель отказалась (FinishReason: SAFETY, RECITATION, OTHER), content может быть None
+                    if not candidate.content or not candidate.content.parts:
+                        finish_reason = getattr(candidate, 'finish_reason', 'UNKNOWN')
+                        logger.warning(f"⚠️ Модель {model_name} вернула кандидата без контента. FinishReason: {finish_reason}")
+                        
+                        # Если причина - безопасность, ставим соответствующую ошибку
+                        if str(finish_reason) in ["SAFETY", "BLOCK_LOW_AND_ABOVE", "BLOCK_MEDIUM_AND_ABOVE"]:
+                            last_error = "safety_filter"
+                        else:
+                            last_error = "model_refusal"
+                        
+                        # Пробуем следующий попытку или модель
+                        time.sleep(1)
+                        continue
+
+                    # 4. Если контент есть, парсим картинку
+                    for part in candidate.content.parts:
+                        if part.inline_data and part.inline_data.data:
+                            # УСПЕХ
+                            raw = part.inline_data.data
+                            if isinstance(raw, str): raw = base64.b64decode(raw)
+                            out_img = Image.open(io.BytesIO(raw))
+                            buf = io.BytesIO()
+                            # Используем JPEG для экономии размера
+                            out_img.save(buf, format="JPEG", quality=90)
+                            return {"b64": base64.b64encode(buf.getvalue()).decode("utf-8"), "reason": None}
+                        
+                        if part.text:
+                            logger.warning(f"⚠️ Model refused with text: {part.text[:100]}...")
+                            last_error = "model_refusal"
+
+                    logger.warning(f"⚠️ Нет данных изображения от {model_name} (структура ответа корректна, но данных нет)")
                     time.sleep(1)
 
                 except Exception as e:
@@ -159,18 +195,31 @@ class OpenAIProvider:
                     # Если 404 - модели нет, сразу пробуем следующую
                     if "404" in err_str and "NOT_FOUND" in err_str:
                         logger.error(f"❌ Модель {model_name} не найдена (404). Проверь название в .env")
+                        last_error = "model_not_found"
                         break # Переход к следующей модели в models_to_try
                     
                     if "429" in err_str or "Resource exhausted" in err_str:
                         logger.warning(f"🚫 Лимиты {model_name}. Break.")
+                        last_error = "limit_exceeded"
                         break 
                         
                     logger.warning(f"⚠️ Error {model_name}: {err_str}")
+                    last_error = "api_error"
                     time.sleep(1)
             
-        return None
+        return {"b64": None, "reason": last_error}
 
-    def edit_image_b64(self, image_bytes: bytes, prompt: str, size: str = "1024x1024") -> str | None:
+    def edit_image_b64(self, image_bytes: bytes, prompt: str, size: str = "1024x1024") -> Dict[str, Any]:
+        """
+        Публичный метод. Возвращает {"b64": ..., "reason": ...}
+        """
         p = (prompt or "").strip()
-        if not p or not image_bytes: return None
-        return self._edit_image_with_nano(image_bytes, p)
+        if not p or not image_bytes: 
+            return {"b64": None, "reason": "empty_input"}
+        
+        # Если включен Gemini (NanoBanana)
+        if self._nano_enabled():
+            return self._edit_image_with_nano(image_bytes, p)
+        
+        # Заглушка, если ничего не включено
+        return {"b64": None, "reason": "no_provider_enabled"}

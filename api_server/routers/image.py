@@ -232,11 +232,25 @@ def generate_from_catalog(data: CatalogGenIn, db: Session = Depends(get_db)):
         return {"ok": False, "error": "bad_image_b64"}
 
     provider = OpenAIProvider()
-    b64 = provider.edit_image_b64(raw_image, final_prompt, size="768x768")
+    # Вызываем обновленный метод
+    result = provider.edit_image_b64(raw_image, final_prompt, size="768x768")
+    
+    b64 = result.get("b64")
+    fail_reason = result.get("reason", "unknown")
 
     if not b64:
+        # Возвращаем кредиты юзеру
         _rollback_limit(db, user)
-        return {"ok": True, "stub": True, "caption": "⚠️ Не удалось сгенерировать изображение."}
+        
+        # Формируем понятное сообщение для логов API
+        caption_text = "⚠️ Не удалось сгенерировать изображение."
+        
+        return {
+            "ok": True, 
+            "stub": True, 
+            "caption": caption_text,
+            "fail_reason": fail_reason  # <--- Передаем код ошибки боту
+        }
 
     return {"ok": True, "stub": False, "b64": b64, "caption": "✨ Готово!"}
 
@@ -264,14 +278,27 @@ def edit_image(data: ImageEditIn, db: Session = Depends(get_db)):
     provider = OpenAIProvider()
     
     # Собираем промпт: Запрос + Сохранить фон + Сохранить лицо
-    full_prompt = f"{data.prompt}. {PRESERVE_BACKGROUND_INSTRUCTION} {PRESERVE_FACE_INSTRUCTION}"
+    full_prompt = f"{data.prompt}.{PRESERVE_FACE_INSTRUCTION}"
     
     logger.info(f"📝 Custom Edit Prompt: {full_prompt[:100]}...")
 
-    b64 = provider.edit_image_b64(raw_image, full_prompt, size=data.size or "768x768")
+    # ИЗМЕНЕНИЕ ЗДЕСЬ: result вместо b64 для ясности
+    result = provider.edit_image_b64(raw_image, full_prompt, size=data.size or "768x768")
+    
+    b64_str = result.get("b64")
+    fail_reason = result.get("reason", "unknown")
 
-    if not b64:
+    if not b64_str:
+        # Возвращаем кредиты юзеру
         _rollback_limit(db, user)
-        return {"ok": True, "stub": True, "caption": "⚠️ Генерация не удалась."}
+        
+        caption_text = "⚠️ Не удалось сгенерировать изображение."
+        
+        return {
+            "ok": True, 
+            "stub": True, 
+            "caption": caption_text,
+            "fail_reason": fail_reason 
+        }
 
-    return {"ok": True, "stub": False, "b64": b64, "caption": "✨ Готово!"}
+    return {"ok": True, "stub": False, "b64": b64_str, "caption": "✨ Готово!"}

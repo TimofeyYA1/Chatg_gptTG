@@ -18,3 +18,5 @@ google-genai
 Pillow
 pypdf   
 reportlab
+gspread
+oauth2client

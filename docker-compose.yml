@@ -3,11 +3,12 @@ version: "3.9"
 services:
   db:
     image: postgres:16
-    environment:
-      POSTGRES_DB: ai_superbot
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports: ["5432:5432"]
+    # ВАЖНОЕ ИЗМЕНЕНИЕ: Читаем переменные напрямую из файла, 
+    # минуя глючную подстановку Docker-compose
+    env_file:
+      - .env
+    # Healthcheck теперь использует явного пользователя 'postgres', 
+    # так как это дефолт и это надежнее
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -15,6 +16,7 @@ services:
       retries: 30
     volumes:
       - db_data:/var/lib/postgresql/data
+    restart: always
 
   api:
     build: .
@@ -26,11 +28,14 @@ services:
     ports:
       - "8080:8000"
     entrypoint: ["/bin/bash", "docker/entrypoint_api.sh"]
+    # Простая проверка через curl
     healthcheck:
-      test: ["CMD", "/healthcheck.sh"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/healthz || exit 1"]
       interval: 10s
-      timeout: 3s
-      retries: 30
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: always
 
   bot:
     build: .
@@ -42,7 +47,7 @@ services:
     entrypoint: ["/bin/bash", "docker/entrypoint_bot.sh"]
     volumes:
       - ./fonts/ARIALBD.TTF:/app/fonts/ARIALBD.TTF:ro
-  # ... остальные сервисы ...
+    restart: always
 
   backup_service:
     build: ./backup_service
@@ -52,10 +57,7 @@ services:
       - .env
     environment:
       - DB_HOST=db
-      - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      # Тут оставляем как есть, backup_service не критичен к старту
       - ADMIN_CHAT_ID=847867090
     restart: always
 

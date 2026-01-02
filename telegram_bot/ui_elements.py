@@ -5,8 +5,6 @@ from typing import Optional
 from aiogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
-    ReplyKeyboardMarkup,
-    KeyboardButton,
 )
 
 # ---------- ASSETS HELPERS ----------
@@ -32,7 +30,8 @@ def img_ui(name: str) -> str:
         return fallback
     return ""
 
-
+LINK_USER_AGREEMENT = "https://docs.google.com/document/d/e/2PACX-1vSk-6MJ0-J-Q0li06vMRvGLC0YOYszxxLSUpGj3qCn4a9EpMJ0fLYpBYGbZCNbNTyP498wBCNkcEBEf/pub"
+LINK_RECURRING_RULES = "https://docs.google.com/document/d/e/2PACX-1vQq270OfXzscST6ppkbOFYu7Qni6hw7PiHp_-Tj6bhcS8U7uD4HlBMLxwgM3V0BUIMf0izCFbMM4ZW3/pub"
 # ---------- NAMES & TITLES ----------
 
 CATALOG_NAMES = {
@@ -69,13 +68,13 @@ CB_SHOOTS = "mode:shoots"
 CB_RESET = "edit:reset"
 CB_GENERATE = "gen:go"
 
-# Keys for payment plans
+# Keys for payment plans (Initial click)
 CB_PAY_WEEK = "premium:buy:week"
 CB_PAY_MONTH = "premium:buy:month"
 CB_PAY_YEAR = "premium:buy:year"
 CB_CANCEL_SUB = "premium:cancel"
 
-# Keys for packages
+# Keys for packages (Initial click)
 CB_PKG_150 = "pkg:150"
 CB_PKG_1000 = "pkg:1000"
 CB_PKG_5000 = "pkg:5000"
@@ -84,7 +83,7 @@ CB_PKG_5000 = "pkg:5000"
 CB_SAVE_FILE = "res:save_file"
 CB_GEN_SAME_PHOTO = "res:same_photo" 
 CB_GEN_NEW_PHOTO = "res:new_photo"   
-CB_REGENERATE = "res:regen" # <--- ВОТ ЭТОЙ КОНСТАНТЫ НЕ ХВАТАЛО
+CB_REGENERATE = "res:regen"
 
 # Help
 CB_LANG_TOGGLE = "help:lang"
@@ -162,8 +161,8 @@ TEXT_HELP_RU = (
     "5. Получите новый образ!\n\n"
     "🔘 Применение готовых образов (стилей, фотосессий, трендов) сбрасывает все текущие выбранные изменения.\n"
     "🔘 Важно: отправляйте фото, где хорошо видно лицо.\n\n"
-    "Если у вас возникнут вопросы или предложения, свяжитесь с администратором @BeautyAIMasterHelpBot\n\n"
-    "<a href='https://google.com'>Пользовательское соглашение</a>"
+    "Если у вас возникнут вопросы или предложения, свяжитесь с администратором@BeautyAIMasterHelp\n\n"
+    f"<a href='{LINK_USER_AGREEMENT}'>Пользовательское соглашение</a>"
 )
 
 TEXT_HELP_EN = (
@@ -176,7 +175,7 @@ TEXT_HELP_EN = (
     "🔘 Applying ready-made looks resets current edits.\n"
     "🔘 Important: send a photo with a clearly visible face.\n\n"
     "Contact support: @BeautyAIMasterHelpBot\n\n"
-    "<a href='https://google.com'>Terms of Service</a>"
+    f"<a href='{LINK_USER_AGREEMENT}'>Terms of Service</a>"
 )
 
 TEXT_PACKAGES_CAPTION = (
@@ -187,8 +186,57 @@ TEXT_PACKAGES_CAPTION = (
     "при продлении подписки — переносятся на следующий период."
 )
 
-
+TEXT_PAYMENT_CONFIRMATION_RUB = (
+    "Вы приобретаете пакет: <b>Премиум на {period} ({count} генераций) - {price}₽</b>\n"
+    "Следующее списание: {next_date} - {price}₽\n\n"
+    "Нажимая «Оплатить», вы соглашаетесь с <a href='{link_recurring}'>Правилами приема рекуррентных платежей</a>. "
+    "Вы сможете отменить подписку в любой момент.\n\n"
+    "🔒 Мы используем надежный платежный сервис Avanpay. Мы не храним ваши платежные данные."
+)
 # ---------- KEYBOARDS ----------
+
+
+def kb_pay_rub_confirm(price_rub: int, payload_data: str) -> InlineKeyboardMarkup:
+    """Кнопка Оплатить для рублевых платежей (имитация перехода на шлюз)"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Оплатить", callback_data=f"do_pay_rub:{price_rub}:{payload_data}")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="cancel_payment")]
+    ])
+
+
+def payment_choice_kb(price_rub: int, price_stars: int, payload_data: str):
+    """
+    Клавиатура выбора метода оплаты.
+    """
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"🇷🇺 Карта ({price_rub}₽)",
+                    callback_data=f"pay_rub:{price_rub}:{payload_data}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"⭐️ Telegram Stars ({price_stars}⭐️)",
+                    callback_data=f"pay_stars:{price_stars}:{payload_data}"
+                )
+            ],
+            [
+                InlineKeyboardButton(text="⬅️ Назад", callback_data="cancel_payment")
+            ]
+        ]
+    )
+
+def kb_cancel_transaction(payload: str, price_stars: int) -> InlineKeyboardMarkup:
+    """
+    Кнопка отмены под инвойсом. 
+    """
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"Оплатить {price_stars} ⭐️", pay=True)],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"inv_cancel:{payload}")]
+    ])
+
 
 def kb_lang() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -266,28 +314,22 @@ def kb_back_to_gender(lang: str = "ru") -> InlineKeyboardMarkup:
 
 
 def kb_editor_home(lang: str = "ru", gender: str = "m") -> InlineKeyboardMarkup:
-    """Динамическая клавиатура редактора в зависимости от пола"""
     rows = []
     
-    # 1. Прическа и Цвет (у всех)
     rows.append([
         InlineKeyboardButton(text="✂️ Прическа", callback_data="editor:open:hair"),
         InlineKeyboardButton(text="🎨 Цвет волос", callback_data="editor:open:color"),
     ])
     
-    # 2. Специфичные категории
     if gender == "f":
-        # Женщины: Макияж, Пирсинг
         rows.append([
             InlineKeyboardButton(text="💄 Макияж", callback_data="editor:open:makeup"),
             InlineKeyboardButton(text="📌 Пирсинг", callback_data="editor:open:piercing"),
         ])
-        # Очки (отдельно или с чем-то)
         rows.append([
             InlineKeyboardButton(text="👓 Очки", callback_data="editor:open:glasses"),
         ])
     else:
-        # Мужчины: Пирсинг, Усы, Борода, Очки
         rows.append([
             InlineKeyboardButton(text="📌 Пирсинг", callback_data="editor:open:piercing"),
             InlineKeyboardButton(text="🥸 Усы", callback_data="editor:open:moustache"),
@@ -297,7 +339,6 @@ def kb_editor_home(lang: str = "ru", gender: str = "m") -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="👓 Очки", callback_data="editor:open:glasses"),
         ])
 
-    # Навигация
     rows.append([InlineKeyboardButton(text="✅ Сгенерировать" if lang=="ru" else "✅ Generate", callback_data=CB_GENERATE)])
     rows.append([InlineKeyboardButton(text="⬅️ Назад" if lang=="ru" else "⬅️ Back", callback_data=CB_MENU)])
 
@@ -386,9 +427,9 @@ def kb_premium_paywall(lang: str = "ru") -> InlineKeyboardMarkup:
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=f"{w} — 399₽", callback_data=CB_PAY_WEEK)],
-            [InlineKeyboardButton(text=f"{m} — 1199₽", callback_data=CB_PAY_MONTH)],
-            [InlineKeyboardButton(text=f"{y} — 5999₽", callback_data=CB_PAY_YEAR)],
+            [InlineKeyboardButton(text=f"{w} — 399₽ / 300⭐️", callback_data=CB_PAY_WEEK)],
+            [InlineKeyboardButton(text=f"{m} — 1199₽ / 900⭐️", callback_data=CB_PAY_MONTH)],
+            [InlineKeyboardButton(text=f"{y} — 5999₽ / 4500⭐️", callback_data=CB_PAY_YEAR)],
         ]
     )
 
