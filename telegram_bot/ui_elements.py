@@ -118,15 +118,19 @@ CB_SHOOT_PICK = "shoot:pick"
 
 TEXTS = {
     "ru": {
-        "start_title": "✨ <b>BeautyAIMasterBot</b> — AI-лаборатория внешности в Telegram.",
-        "start_sub": "Примеряй стили и тренды за пару кликов — без промптов и приложений.",
+        "start_title": (
+            "✨ <b>FaceLab — меняй образ за секунды!</b>\n"
+            "📸 Загрузи фото с лицом и наш ИИ предложит уникальный стиль, причёску, макияж и невероятные образы.\n"
+            "💎 Просто, быстро и красиво — будь версией себя, которой ты гордишься!"
+        ),
+        "start_sub": "", 
         "pick_lang": "Выберите язык / Choose language:",
         "pick_gender": "🟡 Выбери свой пол:",
-        "send_photo": "📸 Отправьте фото, где хорошо видно лицо — это нужно для корректной генерации образа.",
+        "send_photo": "", 
         "photo_ok": "Фото принято ✅ Теперь выбирай режим:",
         "gen_wait": "⏳ <b>Обрабатываем ваше фото...</b>",
         "new_photo_req": "📸 Пожалуйста, пришлите новую фотографию.",
-        "result_caption": "Made with ❤️ by @BeautyAIMasterBot",
+        "result_caption": "От 🌟 @BeautyAIMasterBot",
     },
 }
 
@@ -144,37 +148,40 @@ TEXT_FREE_TRIAL_ENDED = (
     "Оформи подписку и генерируй сотни образов!"
 )
 
+# ОБНОВЛЕННЫЙ ШАБЛОН АКТИВНОЙ ПОДПИСКИ
 TEXT_PREMIUM_ACTIVE_TEMPLATE = (
-    "<b>У вас максимальный доступ</b>\n\n"
-    "✨ Доступно генераций: <b>{available}</b>\n"
-    "🌸 Подписка: <b>Премиум на {plan_name} ({limit} генераций)</b>\n"
+    "✅ <b>Максимальный доступ включён!</b>\n\n"
+    "✨ Генераций осталось: <b>{available}</b>\n"
+    "🌸 Текущая подписка: <b>{plan_name}</b>\n"
     "{renewal_info}\n\n"
-    "Дополнительные пакеты генераций можно приобрести в разделе /packages."
+    "💡 Хочешь ещё больше крутых образов? Посмотри /packages и пополняй генерации!"
 )
 
 TEXT_HELP_RU = (
-    "💡 <b>Как использовать:</b>\n"
-    "1. Отправьте фото своего лица\n"
-    "2. Выберите пол\n"
-    "3. Настройте ваш стиль\n"
-    "4. Нажмите \"Сгенерировать\"\n"
-    "5. Получите новый образ!\n\n"
-    "🔘 Применение готовых образов (стилей, фотосессий, трендов) сбрасывает все текущие выбранные изменения.\n"
-    "🔘 Важно: отправляйте фото, где хорошо видно лицо.\n\n"
-    "Если у вас возникнут вопросы или предложения, свяжитесь с администратором@BeautyAIMasterHelp\n\n"
+    "💡 <b>Как пользоваться FaceLab:</b>\n"
+    "1. 📸 Отправьте фото с хорошо видимым лицом\n"
+    "2. 👤 Выберите пол\n"
+    "3. 🎨 Настройте стиль и образ\n"
+    "4. 🔄 Нажмите «Сгенерировать»\n"
+    "5. 🌟 Получите новый уникальный образ!\n\n"
+    "⚠️ <b>Важно:</b>\n"
+    "• Применение готовых образов (стилей, фотосессий, трендов) сбрасывает все текущие изменения\n"
+    "• Отправляйте фото, где лицо хорошо видно\n\n"
+    "💬 Если есть вопросы или предложения, пишите администратору: @FaceLabHelp\n\n"
     f"<a href='{LINK_USER_AGREEMENT}'>Пользовательское соглашение</a>"
 )
 
 TEXT_HELP_EN = (
-    "💡 <b>How to use:</b>\n"
-    "1. Send a photo of your face\n"
-    "2. Select gender\n"
-    "3. Customize your style\n"
-    "4. Click \"Generate\"\n"
-    "5. Get a new look!\n\n"
-    "🔘 Applying ready-made looks resets current edits.\n"
-    "🔘 Important: send a photo with a clearly visible face.\n\n"
-    "Contact support: @BeautyAIMasterHelpBot\n\n"
+    "💡 <b>How to use FaceLab:</b>\n"
+    "1. 📸 Send a photo with a clearly visible face\n"
+    "2. 👤 Select gender\n"
+    "3. 🎨 Customize style and look\n"
+    "4. 🔄 Click \"Generate\"\n"
+    "5. 🌟 Get a unique new look!\n\n"
+    "⚠️ <b>Important:</b>\n"
+    "• Applying ready-made looks resets current edits\n"
+    "• Send a photo where the face is clearly visible\n\n"
+    "💬 Contact support: @FaceLabHelp\n\n"
     f"<a href='{LINK_USER_AGREEMENT}'>Terms of Service</a>"
 )
 
@@ -438,13 +445,11 @@ def kb_premium_active(user_id: int, bot_name: str = "BeautyAIMasterBotbot", auto
     ref_link = f"https://t.me/{bot_name}?start={user_id}"
     rows = []
     
-    if show_edit_btn:
-        rows.append([InlineKeyboardButton(text="🎨 Редактировать фото", callback_data=CB_GOTO_EDIT)])
-        
-    rows.append([InlineKeyboardButton(text="💌 Поделиться ссылкой", url=f"https://t.me/share/url?url={ref_link}")])
+    # ИЗМЕНЕННЫЕ КНОПКИ
+    rows.append([InlineKeyboardButton(text="• 💌 Отправить друзьям", url=f"https://t.me/share/url?url={ref_link}")])
     
     if auto_renew:
-        rows.append([InlineKeyboardButton(text="❌ Отменить подписку", callback_data=CB_CANCEL_SUB)])
+        rows.append([InlineKeyboardButton(text="• ✖️ Отменить подписку", callback_data=CB_CANCEL_SUB)])
         
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -452,8 +457,8 @@ def kb_result_actions(lang: str = "ru") -> InlineKeyboardMarkup:
     """Кнопки под результатом генерации"""
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🔄 Перегенерировать", callback_data=CB_REGENERATE)],
-            [InlineKeyboardButton(text="🆕 Создать новый образ", callback_data=CB_GEN_NEW_PHOTO)],
+            [InlineKeyboardButton(text="🔄 Сделать снова", callback_data=CB_REGENERATE)],
+            [InlineKeyboardButton(text="✨ Новый образ", callback_data=CB_GEN_NEW_PHOTO)],
         ]
     )
 

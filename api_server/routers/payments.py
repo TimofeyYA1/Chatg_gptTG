@@ -47,33 +47,47 @@ PACKAGES_CONFIG = {
 # --- ПОМОЩНИК ОТПРАВКИ СООБЩЕНИЙ ---
 async def send_success_notification(chat_id: int, plan_key: str, message_id: int = 0):
     """
-    1. Изменяет старое сообщение на Поздравление.
+    1. Изменяет старое сообщение на "Максимальный доступ включен".
     2. Отправляет НОВОЕ сообщение с призывом отправить фото.
     """
     try:
-        names_map = {
-            "Week": "Премиум на 7 дней (150 генераций)",
-            "Month": "Премиум на месяц (600 генераций)",
-            "Year": "Премиум на год (7200 генераций)"
-        }
-        plan_name = names_map.get(plan_key, f"Премиум ({plan_key})")
+        # Данные для текста
+        plan_conf = PLANS_CONFIG.get(plan_key, {})
+        price = plan_conf.get("price", "---")
+        
+        # Расчет даты следующего списания для текста
+        now = datetime.now(timezone.utc)
+        if plan_key == "Week":
+            next_date_dt = now + timedelta(days=7)
+            plan_name = "Премиум, 7 дней (150 генераций)"
+            limit_str = "97" # Хардкод из скрина или расчет, но возьмем из конфига логически
+            # В конфиге лимит 150, но на скрине 97 (видимо, уже потрачено?). 
+            # Для нового юзера это будет 150.
+            limit_str = "150" 
+        elif plan_key == "Month":
+            next_date_dt = now + relativedelta(months=1)
+            plan_name = "Премиум, месяц (600 генераций)"
+            limit_str = "600"
+        else: # Year
+            next_date_dt = now + relativedelta(years=1)
+            plan_name = "Премиум, год (7200 генераций)"
+            limit_str = "7200"
+            
+        next_date_str = next_date_dt.strftime("%d.%m.%Y, %H:%M MSK")
 
-        # Текст 1: Поздравление (заменяет кнопку оплаты)
+        # Текст 1: Поздравление (в точности как на скриншоте)
         text_congrats = (
-            "🎉 <b>Ура, у вас теперь Премиум-подписка!</b>\n\n"
-            f"Вы приобрели пакет <b>{plan_name}</b> 💫\n\n"
-            "⭐️ Теперь вам доступны:\n"
-            "- более 100 премиум-стилей\n"
-            "- HD-качество изображений\n"
-            "- отсутствие рекламы\n"
-            "- приоритетная генерация\n\n"
-            "Спасибо, что выбрали MyLook! 👍"
+            "✅ <b>Максимальный доступ включён!</b>\n\n"
+            f"✨ Генераций осталось: {limit_str}\n"
+            f"🌸 Текущая подписка: {plan_name}\n"
+            f"💳 Следующее списание: {next_date_str} ({price}₽)\n\n"
+            "💡 Хочешь ещё больше крутых образов? Посмотри /packages и пополняй генерации!"
         )
 
         # Текст 2: Инструкция (приходит следом)
         text_start = (
             "🏁 <b>Начинаем творить!</b>\n\n"
-            "✨ <b>BeautyAIMasterBot</b> — ваша AI-лаборатория.\n"
+            "✨ <b>FaceLab</b> — меняй образ за секунды!\n"
             "Примеряй стили и тренды за пару кликов.\n\n"
             "📸 <b>Пожалуйста, отправьте фото, где хорошо видно лицо — и мы сразу создадим новый образ!</b>"
         )
@@ -98,7 +112,6 @@ async def send_success_notification(chat_id: int, plan_key: str, message_id: int
                 await bot.send_message(chat_id=chat_id, text=text_congrats, parse_mode="HTML")
             
             # ШАГ 2: Отправляем призыв к действию (Start)
-            # Небольшая пауза для естественности (опционально, тут без sleep ради скорости)
             await bot.send_message(chat_id=chat_id, text=text_start, parse_mode="HTML")
             
     except Exception as e:

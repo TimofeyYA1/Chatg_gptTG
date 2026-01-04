@@ -22,7 +22,8 @@ from aiogram.types import (
     FSInputFile, BufferedInputFile, 
     ReplyKeyboardRemove, InputMediaPhoto,
     LabeledPrice, PreCheckoutQuery, ContentType,
-    InlineKeyboardMarkup, InlineKeyboardButton
+    InlineKeyboardMarkup, InlineKeyboardButton,
+    BotCommand
 )
 from aiogram.exceptions import TelegramNetworkError, TelegramBadRequest
 from datetime import timedelta 
@@ -34,6 +35,7 @@ router = Router()
 BUY_LOCK: set[int] = set()
 _MEDIA_CACHE: Dict[str, str] = {}
 
+# ТУТ МЕНЯЕМ ПЕРЕВОД, чтобы подходило под "Премиум, ..."
 PLAN_TRANSLATE = {
     "Week": "7 дней",
     "Month": "месяц",
@@ -68,7 +70,7 @@ def _format_ru_date(iso: str | None) -> str:
     if not iso: return "—"
     try:
         dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
-        return dt.strftime("%d.%m.%Y %H:%M MSK")
+        return dt.strftime("%d.%m.%Y, %H:%M MSK") # Запятая добавлена по просьбе
     except:
         if "T" in iso: return iso.split("T")[0]
         return iso
@@ -151,6 +153,18 @@ class Flow(StatesGroup):
 
 # -------------------- COMMANDS --------------------
 
+@router.message(Command("set_menu"))
+async def set_menu_command(message: Message):
+    commands = [
+        BotCommand(command="start", description="🏠 Главное"),
+        BotCommand(command="premium", description="💳 Подписка"),
+        BotCommand(command="account", description="💎 Баланс и бонусы"),
+        BotCommand(command="help", description="🆘 Нужна помощь?"),
+    ]
+    await message.bot.set_my_commands(commands)
+    await message.answer("✅ Меню бота обновлено! Нажмите на кнопку 'Меню' слева внизу, чтобы проверить.")
+
+
 @router.message(CommandStart())
 async def start(message: Message, state: FSMContext) -> None:
     await state.clear()
@@ -159,7 +173,7 @@ async def start(message: Message, state: FSMContext) -> None:
     if await has_generations_async(message.chat.id):
         await state.set_state(Flow.waiting_photo)
         path = img_ui("start")
-        caption = ui.TEXTS["ru"]["start_title"] + "\n" + ui.TEXTS["ru"]["send_photo"]
+        caption = ui.TEXTS["ru"]["start_title"]
         await panel_send(message, state, path, caption, kb=None)
     else:
         path = img_ui("premium_paywall")
@@ -206,7 +220,7 @@ async def restart_callback(call: CallbackQuery, state: FSMContext) -> None:
     if await has_generations_async(call.from_user.id):
         await state.set_state(Flow.waiting_photo)
         path = img_ui("start")
-        caption = ui.TEXTS["ru"]["start_title"] + "\n" + ui.TEXTS["ru"]["send_photo"]
+        caption = ui.TEXTS["ru"]["start_title"]
         try: await panel_edit_media(call, state, path, caption, kb=None)
         except: await panel_send(call.message, state, path, caption, kb=None)
     else:
@@ -222,11 +236,21 @@ async def restart_callback(call: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(Command("premium"))
 @router.message(Command("account"))
-async def premium_cmd(message: Message, state: FSMContext, is_edit: bool = False, show_edit_btn: bool = False) -> None:
-    uid = message.chat.id
+@router.callback_query(F.data == "account:info")
+async def premium_cmd(message: Message | CallbackQuery, state: FSMContext, is_edit: bool = False, show_edit_btn: bool = False) -> None:
+    
+    if isinstance(message, CallbackQuery):
+        call = message
+        message = call.message
+        uid = call.from_user.id
+        is_edit = True
+    else:
+        uid = message.chat.id
+
     try: summary = await api_client.get_sub_summary(uid)
     except: summary = {}
     role = (summary.get("role") or "free").strip()
+    
     if role.lower() == "free":
         caption = ui.PREMIUM_PAYWALL_CAPTION_RU
         kb = ui.kb_premium_paywall("ru")
@@ -235,47 +259,59 @@ async def premium_cmd(message: Message, state: FSMContext, is_edit: bool = False
         totals = summary.get("totals", {})
         usage = summary.get("usage", {})
         available = max(0, totals.get("images", 0) - usage.get("images", 0))
-        plan_name = PLAN_TRANSLATE.get(role, role)
+        
+        # Формируем строку плана в формате "Премиум, 7 дней (150 генераций)"
+        plan_period = PLAN_TRANSLATE.get(role, role)
         base_limit = summary.get("limits", {}).get("images", 0)
+        
+        # Полная строка подписки для шаблона
+        plan_name = f"Премиум, {plan_period} ({base_limit} генераций)"
+        
         price = PLAN_PRICES.get(role, "---")
         active_until_str = _format_ru_date(summary.get("active_until"))
         auto_renew = summary.get("auto_renew", True)
-        renewal_info = f"💳 Следующее списание: <b>{active_until_str} ({price}₽)</b>" if auto_renew else f"⏳ Действует до: <b>{active_until_str}</b>"
+        
+        # Формируем строку списания
+        if auto_renew:
+            renewal_info = f"💳 Следующее списание: {active_until_str} ({price}₽)"
+        else:
+            renewal_info = f"⏳ Действует до: {active_until_str}"
         
         caption = ui.TEXT_PREMIUM_ACTIVE_TEMPLATE.format(
             available=available,
             plan_name=plan_name,
-            limit=base_limit,
-            renewal_info=renewal_info,
-            price=price,
-            invited_count=0
+            renewal_info=renewal_info
         )
+        
         bot_info = await message.bot.get_me()
         kb = ui.kb_premium_active(uid, bot_info.username, auto_renew=auto_renew, show_edit_btn=show_edit_btn)
         img = img_ui("premium")
+    
     if not img or not os.path.exists(img): img = img_ui("premium")
+    
     if is_edit:
-        data = await state.get_data()
-        msg_id = data.get("panel_id") or message.message_id
-        cached_id = _MEDIA_CACHE.get(img)
-        if cached_id: media = InputMediaPhoto(media=cached_id, caption=caption)
-        else: media = InputMediaPhoto(media=FSInputFile(img), caption=caption)
-        try:
-            res = await message.bot.edit_message_media(chat_id=message.chat.id, message_id=msg_id, media=media, reply_markup=kb)
-            if not cached_id and isinstance(res, Message) and res.photo: _MEDIA_CACHE[img] = res.photo[-1].file_id
-        except TelegramBadRequest: pass
-        except Exception: await panel_send(message, state, img, caption, kb)
+        await panel_edit_media(message, state, img, caption, kb)
+        if isinstance(message, CallbackQuery):
+             await message.answer()
     else:
         await panel_send(message, state, img_path=img, caption=caption, kb=kb)
 
 @router.message(Command("help"))
-async def help_cmd(message: Message, state: FSMContext) -> None:
-    await message.answer(ui.TEXT_HELP_RU, reply_markup=ui.kb_help("ru"), disable_web_page_preview=True)
+@router.callback_query(F.data == "help:show")
+async def help_cmd(message: Message | CallbackQuery, state: FSMContext) -> None:
+    text = ui.TEXT_HELP_RU
+    kb = ui.kb_help("ru")
+    
+    if isinstance(message, CallbackQuery):
+        await message.message.answer(text, reply_markup=kb, disable_web_page_preview=True)
+        await message.answer()
+    else:
+        await message.answer(text, reply_markup=kb, disable_web_page_preview=True)
 
 @router.callback_query(F.data == ui.CB_LANG_TOGGLE)
 async def help_lang_toggle(call: CallbackQuery, state: FSMContext) -> None:
     current_text = call.message.text or call.message.caption or ""
-    if "Как использовать" in current_text: new_text = ui.TEXT_HELP_EN; new_kb = ui.kb_help("en")
+    if "Как пользоваться" in current_text: new_text = ui.TEXT_HELP_EN; new_kb = ui.kb_help("en")
     else: new_text = ui.TEXT_HELP_RU; new_kb = ui.kb_help("ru")
     await call.message.edit_text(new_text, reply_markup=new_kb, disable_web_page_preview=True)
     await call.answer()
@@ -290,7 +326,7 @@ async def packages_cmd(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data == ui.CB_CANCEL_SUB)
 async def cancel_sub(call: CallbackQuery, state: FSMContext):
     res = await api_client.cancel_plan(call.from_user.id)
-    if res.get("ok"): await call.answer("Автопродление отключено.", show_alert=True); await premium_cmd(call.message, state, is_edit=True)
+    if res.get("ok"): await call.answer("Автопродление отключено.", show_alert=True); await premium_cmd(call, state, is_edit=True)
     else: await call.answer("Ошибка отмены.", show_alert=True)
 
 # -------------------- PAYMENT FLOW (RU + STARS) --------------------
@@ -333,7 +369,8 @@ async def ask_payment_method_pkg(call: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "cancel_payment")
 async def cancel_payment_click(call: CallbackQuery, state: FSMContext):
-    await premium_cmd(call.message, state, is_edit=True)
+    # При отмене возвращаемся на экран аккаунта/премиума
+    await premium_cmd(call, state, is_edit=True)
     await call.answer("Отменено")
 
 # -------------------- 3. Handle RUB Selection (CONFIRMATION + LINK) --------------------
@@ -354,7 +391,7 @@ async def on_pay_choice_rub(call: CallbackQuery, state: FSMContext):
         await call.answer("Ошибка данных", show_alert=True)
         return
     
-    # --- НОВОЕ: Передаем ID сообщения, чтобы API мог его изменить ---
+    # --- Передаем ID сообщения, чтобы API мог его изменить ---
     message_id = call.message.message_id
 
     # 2. Сразу формируем ссылку на оплату
@@ -389,12 +426,12 @@ async def on_pay_choice_rub(call: CallbackQuery, state: FSMContext):
 
         next_date_str = next_date.strftime("%d.%m.%Y %H:%M MSK")
         
-        caption = (
-            f"Вы приобретаете пакет: <b>Премиум на {period_str}\n({count_str} генераций) - {price_rub}₽</b>\n"
-            f"Следующее списание: {next_date_str} - {price_rub}₽\n\n"
-            f"Нажимая «Оплатить», вы соглашаетесь с <a href='{ui.LINK_RECURRING_RULES}'>Правилами приема рекуррентных платежей</a>. "
-            f"Вы сможете отменить подписку в любой момент.\n\n"
-            f"🔒 Мы используем надежный платежный сервис CloudPayments. Мы не храним ваши платежные данные."
+        caption = ui.TEXT_PAYMENT_CONFIRMATION_RUB.format(
+            period=period_str,
+            count=count_str,
+            price=price_rub,
+            next_date=next_date_str,
+            link_recurring=ui.LINK_RECURRING_RULES
         )
         
     elif ptype == "pkg":
@@ -559,7 +596,7 @@ async def on_successful_payment(message: Message, state: FSMContext):
 @router.callback_query(F.data == ui.CB_GOTO_EDIT)
 async def on_goto_edit(call: CallbackQuery, state: FSMContext):
     await state.set_state(Flow.waiting_photo)
-    await panel_send(call.message, state, img_ui("start"), ui.TEXTS["ru"]["start_title"] + "\n" + ui.TEXTS["ru"]["send_photo"], kb=None)
+    await panel_send(call.message, state, img_ui("start"), ui.TEXTS["ru"]["start_title"], kb=None)
     await call.answer()
 
 @router.message(Flow.waiting_photo, F.photo)
@@ -651,7 +688,7 @@ async def back_to_photo(call: CallbackQuery, state: FSMContext) -> None:
     if not await has_generations_async(call.from_user.id):
         await call.answer("Нужна подписка"); return
     await state.set_state(Flow.waiting_photo)
-    await panel_edit_media(call, state, img_ui("start"), ui.TEXTS["ru"]["start_title"] + "\n" + ui.TEXTS["ru"]["send_photo"], None)
+    await panel_edit_media(call, state, img_ui("start"), ui.TEXTS["ru"]["start_title"], None)
     await call.answer()
 
 @router.callback_query(F.data == ui.CB_EDITOR_HOME)
@@ -922,31 +959,62 @@ async def on_gen_new_photo(call: CallbackQuery, state: FSMContext):
 
 
 # --- PANEL HELPERS ---
-async def panel_send(message: Message, state: FSMContext, img_path: str, caption: str, kb=None) -> None:
+async def panel_send(message: Message | CallbackQuery, state: FSMContext, img_path: str, caption: str, kb=None) -> None:
+    """Универсальная отправка панели. Принимает Message или CallbackQuery."""
+    # Получаем объект message для ответа
+    if isinstance(message, CallbackQuery):
+        msg = message.message
+    else:
+        msg = message
+
     if not img_path or not os.path.exists(img_path):
-        sent = await message.answer(caption, reply_markup=kb)
+        sent = await msg.answer(caption, reply_markup=kb)
         await state.update_data(panel_id=sent.message_id)
         return
+    
     cached_id = _MEDIA_CACHE.get(img_path)
     if cached_id: photo_obj = cached_id
     else: photo_obj = FSInputFile(img_path)
+    
     try:
-        sent = await message.answer_photo(photo_obj, caption=caption, reply_markup=kb)
+        sent = await msg.answer_photo(photo_obj, caption=caption, reply_markup=kb)
         if not cached_id and sent.photo: _MEDIA_CACHE[img_path] = sent.photo[-1].file_id
         await state.update_data(panel_id=sent.message_id)
     except Exception:
-        if cached_id: del _MEDIA_CACHE[img_path]; await panel_send(message, state, img_path, caption, kb)
+        if cached_id: del _MEDIA_CACHE[img_path]
+        # Рекурсия с очищенным кэшем, но нужно быть осторожным. 
+        # Проще попробовать отправить как файл заново.
+        try:
+             photo_obj = FSInputFile(img_path)
+             sent = await msg.answer_photo(photo_obj, caption=caption, reply_markup=kb)
+             await state.update_data(panel_id=sent.message_id)
+        except Exception as e:
+             print(f"Panel send error: {e}")
 
-async def panel_edit_media(call: CallbackQuery, state: FSMContext, img_path: str, caption: str, kb=None) -> None:
+async def panel_edit_media(message_obj: Message | CallbackQuery, state: FSMContext, img_path: str, caption: str, kb=None) -> None:
+    """Редактирует медиа в существующем сообщении."""
+    
+    if isinstance(message_obj, CallbackQuery):
+        message = message_obj.message
+        chat_id = message.chat.id
+    else:
+        message = message_obj
+        chat_id = message.chat.id
+
     data = await state.get_data()
-    msg_id = data.get("panel_id") or call.message.message_id
+    msg_id = data.get("panel_id") or message.message_id
+    
     if not img_path or not os.path.exists(img_path): img_path = img_ui("start")
+    
     cached_id = _MEDIA_CACHE.get(img_path)
     if cached_id: media = InputMediaPhoto(media=cached_id, caption=caption)
     else: media = InputMediaPhoto(media=FSInputFile(img_path), caption=caption)
+    
     try:
-        res = await call.bot.edit_message_media(chat_id=call.message.chat.id, message_id=msg_id, media=media, reply_markup=kb)
+        res = await message.bot.edit_message_media(chat_id=chat_id, message_id=msg_id, media=media, reply_markup=kb)
         if not cached_id and isinstance(res, Message) and res.photo: _MEDIA_CACHE[img_path] = res.photo[-1].file_id
-    except TelegramBadRequest: pass
+    except TelegramBadRequest: 
+        # Если сообщение не изменилось или удалено
+        pass
     except Exception: 
         if cached_id: del _MEDIA_CACHE[img_path]
