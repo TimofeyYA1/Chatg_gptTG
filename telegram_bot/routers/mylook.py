@@ -336,7 +336,7 @@ async def cancel_payment_click(call: CallbackQuery, state: FSMContext):
     await premium_cmd(call.message, state, is_edit=True)
     await call.answer("Отменено")
 
-# -------------------- 3. Handle RUB Selection (DIRECT REDIRECT) --------------------
+# -------------------- 3. Handle RUB Selection (CONFIRMATION + LINK) --------------------
 
 @router.callback_query(F.data.startswith("pay_rub:"))
 async def on_pay_choice_rub(call: CallbackQuery, state: FSMContext):
@@ -354,19 +354,21 @@ async def on_pay_choice_rub(call: CallbackQuery, state: FSMContext):
         await call.answer("Ошибка данных", show_alert=True)
         return
     
+    # --- НОВОЕ: Передаем ID сообщения, чтобы API мог его изменить ---
+    message_id = call.message.message_id
+
     # 2. Сразу формируем ссылку на оплату
     api_url = settings.API_PUBLIC_URL 
     if not api_url.startswith("http"):
         api_url = "http://localhost:8000"
         
-    payment_link = f"{api_url}/payments/checkout?chat_id={uid}&type={ptype}&value={pvalue}"
+    # Добавляем &message_id=... в ссылку
+    payment_link = f"{api_url}/payments/checkout?chat_id={uid}&type={ptype}&value={pvalue}&message_id={message_id}"
     
-    # 3. Генерируем текст подтверждения (как на фото 2)
+    # 3. Генерируем текст подтверждения
     caption = ""
     
-    # Текст для Подписки
     if ptype == "plan":
-        # Считаем дату следующего списания для красоты
         now = datetime.now()
         if pvalue == "Week":
             next_date = now + timedelta(days=7)
@@ -395,7 +397,6 @@ async def on_pay_choice_rub(call: CallbackQuery, state: FSMContext):
             f"🔒 Мы используем надежный платежный сервис CloudPayments. Мы не храним ваши платежные данные."
         )
         
-    # Текст для Пакетов (не подписка)
     elif ptype == "pkg":
         caption = (
             f"Вы приобретаете пакет: <b>{pvalue} генераций - {price_rub}₽</b>\n\n"
@@ -403,57 +404,18 @@ async def on_pay_choice_rub(call: CallbackQuery, state: FSMContext):
             f"🔒 Платеж через сервис CloudPayments."
         )
 
-    # 4. Клавиатура: Кнопка "Оплатить" уже содержит ссылку!
+    # 4. Клавиатура: Кнопка "Оплатить" содержит ссылку
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Оплатить", url=payment_link)], # <--- ССЫЛКА ЗДЕСЬ
+        [InlineKeyboardButton(text="Оплатить", url=payment_link)], 
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="cancel_payment")]
     ])
 
     # 5. Показываем экран подтверждения
-    # Мы не используем call.answer(url=...), чтобы не кидать сразу, 
-    # а даем юзеру прочитать условия.
     await panel_edit_media(
         call, state, 
-        img_ui("premium"), # Картинка остается та же
+        img_ui("premium"), 
         caption, 
         kb=kb
-    )
-    await call.answer()
-
-
-# 3.1. Execute RUB Payment (Generate Link)
-@router.callback_query(F.data.startswith("do_pay_rub:"))
-async def on_pay_rub_execute(call: CallbackQuery, state: FSMContext):
-    # data: do_pay_rub:{price}:{payload}
-    parts = call.data.split(":")
-    # price_rub = int(parts[1]) # Цена есть в ссылке, тут не обязательна
-    payload = ":".join(parts[2:]) # plan:Week или pkg:150
-    
-    uid = call.from_user.id
-    
-    # Разбираем payload
-    try:
-        ptype, pvalue = payload.split(":")
-    except ValueError:
-        await call.answer("Ошибка данных", show_alert=True)
-        return
-    
-    # Формируем ссылку на наш API
-    api_url = settings.API_PUBLIC_URL 
-    if not api_url.startswith("http"):
-        api_url = "http://localhost:8000" # Fallback
-        
-    payment_link = f"{api_url}/payments/checkout?chat_id={uid}&type={ptype}&value={pvalue}"
-    
-    # Отправляем кнопку-ссылку
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💳 Перейти к оплате", url=payment_link)],
-        [InlineKeyboardButton(text="🔙 Отмена", callback_data="cancel_payment")]
-    ])
-    
-    await call.message.edit_caption(
-        caption="🚀 <b>Ссылка сформирована!</b>\n\nНажмите кнопку ниже, чтобы оплатить картой через безопасный шлюз.",
-        reply_markup=kb
     )
     await call.answer()
 

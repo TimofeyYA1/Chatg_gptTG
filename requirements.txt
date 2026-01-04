@@ -20,3 +20,4 @@ pypdf
 reportlab
 gspread
 oauth2client
+python-multipart

@@ -5,6 +5,9 @@ from sqlalchemy import select
 from datetime import datetime, timedelta, timezone
 from dateutil.relativedelta import relativedelta
 
+# Импортируем Bot для отправки уведомлений
+from aiogram import Bot 
+
 from db_adapter.database import get_db
 from db_adapter.models import User, PremiumCredits, Subscription
 from common.config import settings
@@ -29,7 +32,6 @@ def _get_or_create_credits(db: Session, user_id: int) -> PremiumCredits:
     return c
 
 # --- КОНФИГУРАЦИЯ ТАРИФОВ ---
-# recurrent: { interval: 'Week' | 'Month' | 'Year', period: 1 }
 PLANS_CONFIG = {
     "Week":  {"price": 399,  "desc": "Премиум на 7 дней", "rec_interval": "Week",  "rec_period": 1},
     "Month": {"price": 1199, "desc": "Премиум на месяц",  "rec_interval": "Month", "rec_period": 1},
@@ -42,26 +44,78 @@ PACKAGES_CONFIG = {
     "5000": {"price": 5999, "desc": "Пакет 5000 генераций"},
 }
 
+# --- ПОМОЩНИК ОТПРАВКИ СООБЩЕНИЙ ---
+async def send_success_notification(chat_id: int, plan_key: str, message_id: int = 0):
+    """
+    1. Изменяет старое сообщение на Поздравление.
+    2. Отправляет НОВОЕ сообщение с призывом отправить фото.
+    """
+    try:
+        names_map = {
+            "Week": "Премиум на 7 дней (150 генераций)",
+            "Month": "Премиум на месяц (600 генераций)",
+            "Year": "Премиум на год (7200 генераций)"
+        }
+        plan_name = names_map.get(plan_key, f"Премиум ({plan_key})")
+
+        # Текст 1: Поздравление (заменяет кнопку оплаты)
+        text_congrats = (
+            "🎉 <b>Ура, у вас теперь Премиум-подписка!</b>\n\n"
+            f"Вы приобрели пакет <b>{plan_name}</b> 💫\n\n"
+            "⭐️ Теперь вам доступны:\n"
+            "- более 100 премиум-стилей\n"
+            "- HD-качество изображений\n"
+            "- отсутствие рекламы\n"
+            "- приоритетная генерация\n\n"
+            "Спасибо, что выбрали MyLook! 👍"
+        )
+
+        # Текст 2: Инструкция (приходит следом)
+        text_start = (
+            "🏁 <b>Начинаем творить!</b>\n\n"
+            "✨ <b>BeautyAIMasterBot</b> — ваша AI-лаборатория.\n"
+            "Примеряй стили и тренды за пару кликов.\n\n"
+            "📸 <b>Пожалуйста, отправьте фото, где хорошо видно лицо — и мы сразу создадим новый образ!</b>"
+        )
+
+        async with Bot(token=settings.TELEGRAM_BOT_TOKEN) as bot:
+            # ШАГ 1: Редактируем сообщение с оплатой
+            if message_id and message_id > 0:
+                try:
+                    # reply_markup=None удаляет кнопку "Оплатить"
+                    await bot.edit_message_caption(
+                        chat_id=chat_id, 
+                        message_id=message_id, 
+                        caption=text_congrats, 
+                        parse_mode="HTML", 
+                        reply_markup=None
+                    )
+                except Exception as edit_err:
+                    logger.warning(f"Could not edit msg {message_id}: {edit_err}. Sending as new.")
+                    # Если сообщение удалили, шлем поздравление новым сообщением
+                    await bot.send_message(chat_id=chat_id, text=text_congrats, parse_mode="HTML")
+            else:
+                await bot.send_message(chat_id=chat_id, text=text_congrats, parse_mode="HTML")
+            
+            # ШАГ 2: Отправляем призыв к действию (Start)
+            # Небольшая пауза для естественности (опционально, тут без sleep ради скорости)
+            await bot.send_message(chat_id=chat_id, text=text_start, parse_mode="HTML")
+            
+    except Exception as e:
+        logger.error(f"Failed to send TG notification to {chat_id}: {e}")
+
+
 # -------------------------------------------------------------------------
-# 1. СТРАНИЦА ОПЛАТЫ (ОТКРЫВАЕТСЯ В БРАУЗЕРЕ ЮЗЕРА)
+# 1. СТРАНИЦА ОПЛАТЫ
 # -------------------------------------------------------------------------
 @router.get("/checkout", response_class=HTMLResponse)
-def checkout_page(chat_id: int, type: str, value: str):
-    """
-    type: 'plan' или 'pkg'
-    value: 'Week'/'Month' или '150'/'1000'
-    """
-    
+def checkout_page(chat_id: int, type: str, value: str, message_id: int = 0):
     public_id = settings.CLOUDPAYMENTS_PUBLIC_ID
     
-    # Определяем цену и параметры
     price = 0
     description = ""
     is_subscription = False
     
-    # Конфиг для JS виджета (подписка)
-    recurrent_json_obj = "undefined"
-
     if type == "plan":
         conf = PLANS_CONFIG.get(value)
         if not conf: return HTMLResponse("Неверный тариф", 400)
@@ -76,7 +130,6 @@ def checkout_page(chat_id: int, type: str, value: str):
         description = conf["desc"]
         is_subscription = False
 
-    # HTML с виджетом
     html_content = f"""
     <!DOCTYPE html>
     <html lang="ru">
@@ -105,13 +158,17 @@ def checkout_page(chat_id: int, type: str, value: str):
         <script>
             this.pay = function () {{
                 var widget = new cp.CloudPayments();
+                
+                // InvoiceId: type_value_chatId_messageId_timestamp
+                var invoiceId = '{type}_{value}_{chat_id}_{message_id}_' + Date.now();
+                
                 var data = {{
                     publicId: '{public_id}',
                     description: '{description}',
                     amount: {price},
                     currency: 'RUB',
-                    invoiceId: '{type}_{value}_{chat_id}_' + Date.now(), // ID заказа для сверки
-                    accountId: '{chat_id}', // chat_id плательщика
+                    invoiceId: invoiceId, 
+                    accountId: '{chat_id}', 
                     skin: "modern",
                     data: {{
                         my_type: '{type}',
@@ -119,7 +176,6 @@ def checkout_page(chat_id: int, type: str, value: str):
                     }}
                 }};
 
-                // Для подписок добавляем объект рекуррентных платежей
                 if ({str(is_subscription).lower()}) {{
                     data.data.cloudPayments = {{
                         recurrent: {{
@@ -150,38 +206,47 @@ def checkout_page(chat_id: int, type: str, value: str):
 
 
 # -------------------------------------------------------------------------
-# 2. WEBHOOK (СЮДА ПРИХОДИТ УВЕДОМЛЕНИЕ ОТ CLOUDPAYMENTS)
+# 2. WEBHOOK
 # -------------------------------------------------------------------------
 @router.post("/webhook")
 async def cloudpayments_webhook(request: Request, db: Session = Depends(get_db)):
-    """
-    Обрабатывает 'pay' (успешная оплата) и 'recurrent' (автосписание).
-    """
+    # 1. Проверка подписи
     body = await request.body()
     signature = request.headers.get("Content-HMAC", "")
 
     if not cp_service.check_signature(body, signature):
         logger.warning("❌ Invalid CP Signature")
-        return Response(content='{"code":0}', media_type="application/json") # CP всегда ждет code:0
+        return Response(content='{"code":0}', media_type="application/json") 
 
-    # CloudPayments шлет данные в Form Data
     form = await request.form()
     
-    # Извлекаем данные
+    # 2. ПРОВЕРКА СТАТУСА ПЛАТЕЖА
+    status = form.get("Status")
+    if status not in ["Completed", "Authorized"]:
+        logger.info(f"🚫 CP Webhook: Payment Status is '{status}' (not success). Ignoring.")
+        return Response(content='{"code":0}', media_type="application/json")
+
+    # 3. Извлечение данных
     chat_id_str = form.get("AccountId") 
     amount = float(form.get("Amount", 0))
-    cp_sub_id = form.get("SubscriptionId") # Придет, если создалась подписка
-    
-    # InvoiceId: type_value_chatid_ts
+    cp_sub_id = form.get("SubscriptionId")
     invoice_id = form.get("InvoiceId", "")
     
-    if not chat_id_str:
-        # Если AccountId пустой, пробуем достать из InvoiceId
-        if invoice_id:
-            try: chat_id_str = invoice_id.split("_")[2]
-            except: pass
-            
-    if not chat_id_str or not invoice_id:
+    pay_type = ""
+    pay_value = ""
+    message_id = 0
+    
+    parts = invoice_id.split("_")
+    if len(parts) >= 3:
+        pay_type = parts[0]
+        pay_value = parts[1]
+        if not chat_id_str:
+             chat_id_str = parts[2]
+        if len(parts) >= 5: 
+            try: message_id = int(parts[3])
+            except: message_id = 0
+
+    if not chat_id_str or not pay_type:
         return Response(content='{"code":0}')
 
     try:
@@ -189,36 +254,24 @@ async def cloudpayments_webhook(request: Request, db: Session = Depends(get_db))
     except:
         return Response(content='{"code":0}')
 
-    # Разбираем InvoiceId
-    parts = invoice_id.split("_")
-    if len(parts) < 3:
-        return Response(content='{"code":0}')
-    
-    pay_type = parts[0] # plan / pkg
-    pay_value = parts[1] # Week / 150
+    logger.info(f"💰 CP Webhook SUCCESS: User={chat_id}, Type={pay_type}, Val={pay_value}, Status={status}")
 
-    logger.info(f"💰 CP Webhook: User={chat_id}, Type={pay_type}, Val={pay_value}, Amount={amount}")
-
+    # 4. Взаимодействие с БД
     user = _get_user(db, chat_id)
     if not user:
         user = User(chat_id=chat_id, role="free")
         db.add(user); db.commit(); db.refresh(user)
-
-    # --- ЛОГИКА НАЧИСЛЕНИЯ ---
     
+    # --- ЛОГИКА НАЧИСЛЕНИЯ ПОДПИСКИ ---
     if pay_type == "plan":
-        # Активация подписки
         conf = PLANS_CONFIG.get(pay_value)
         if conf:
             start = _now()
-            # Ищем текущую подписку
             sub = db.execute(select(Subscription).where(Subscription.user_id == user.id)).scalar_one_or_none()
             
-            # Если есть активная подписка, продлеваем её
             if sub and sub.current_period_end and sub.current_period_end > start:
                 start = sub.current_period_end
             
-            # Считаем дату окончания
             if conf["rec_interval"] == "Week":
                 end = start + timedelta(days=7)
             elif conf["rec_interval"] == "Month":
@@ -235,24 +288,21 @@ async def cloudpayments_webhook(request: Request, db: Session = Depends(get_db))
             sub.current_period_end = end
             sub.cancel_at_period_end = False 
             
-            # Сохраняем ID подписки из CP
             if cp_sub_id:
                 sub.cp_sub_id = cp_sub_id
             
-            # Обновляем лимиты (Хардкод лимитов в API для синхронизации)
             credits = _get_or_create_credits(db, user.id)
             limits_map = {"Week": 150, "Month": 600, "Year": 7200}
             credits.img_limit_base = limits_map.get(pay_value, 0)
             
-            # Обнуляем счетчик "бесплатных" или использованных в рамках подписки, если новая подписка
-            # (Логика может отличаться в зависимости от требований, здесь простой сброс)
-            # credits.web_queries = 0 
-
             db.commit()
-            logger.info(f"✅ Subscription {pay_value} activated for {chat_id}")
+            logger.info(f"✅ Subscription saved to DB for {chat_id}")
+            
+            # 5. Уведомления в ТГ (Поздравление + Старт)
+            await send_success_notification(chat_id, pay_value, message_id)
 
+    # --- ЛОГИКА ДЛЯ ПАКЕТОВ ---
     elif pay_type == "pkg":
-        # Покупка пакета
         qty = 0
         try: qty = int(pay_value)
         except: pass
@@ -261,6 +311,6 @@ async def cloudpayments_webhook(request: Request, db: Session = Depends(get_db))
             credits = _get_or_create_credits(db, user.id)
             credits.image_credits = (credits.image_credits or 0) + qty
             db.commit()
-            logger.info(f"✅ Added {qty} credits for {chat_id}")
+            logger.info(f"✅ Package credits saved to DB for {chat_id}")
 
     return Response(content='{"code":0}', media_type="application/json")
