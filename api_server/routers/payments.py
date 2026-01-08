@@ -33,10 +33,23 @@ def _get_or_create_credits(db: Session, user_id: int) -> PremiumCredits:
 
 # --- КОНФИГУРАЦИЯ ТАРИФОВ ---
 PLANS_CONFIG = {
-    "Week":  {"price": 399,  "desc": "Премиум на 7 дней", "rec_interval": "Week",  "rec_period": 1},
-    "Month": {"price": 1199, "desc": "Премиум на месяц",  "rec_interval": "Month", "rec_period": 1},
-    "Year":  {"price": 5999, "desc": "Премиум на год",    "rec_interval": "Year",  "rec_period": 1},
+    # STANDARD
+    "Week_Std":  {"price": 399,  "desc": "Обычная: Неделя", "rec_interval": "Week",  "rec_period": 1},
+    "Month_Std": {"price": 1199, "desc": "Обычная: Месяц",  "rec_interval": "Month", "rec_period": 1},
+    "Year_Std":  {"price": 5999, "desc": "Обычная: Год",    "rec_interval": "Year",  "rec_period": 1},
+
+    # PRO
+    "Week_Pro":  {"price": 799,  "desc": "Pro: Неделя", "rec_interval": "Week",  "rec_period": 1},
+    "Month_Pro": {"price": 2399, "desc": "Pro: Месяц",  "rec_interval": "Month", "rec_period": 1},
+    "Year_Pro":  {"price": 11999, "desc": "Pro: Год",    "rec_interval": "Year",  "rec_period": 1},
 }
+
+# Обратная совместимость для старых ссылок (если есть)
+PLANS_CONFIG.update({
+    "Week": PLANS_CONFIG["Week_Std"],
+    "Month": PLANS_CONFIG["Month_Std"],
+    "Year": PLANS_CONFIG["Year_Std"]
+})
 
 PACKAGES_CONFIG = {
     "150":  {"price": 349,  "desc": "Пакет 150 генераций"},
@@ -57,25 +70,28 @@ async def send_success_notification(chat_id: int, plan_key: str, message_id: int
         
         # Расчет даты следующего списания для текста
         now = datetime.now(timezone.utc)
-        if plan_key == "Week":
+        
+        # Определяем название плана для пользователя
+        is_pro = "Pro" in plan_key
+        tier_name = "Pro" if is_pro else "Обычная"
+        
+        if "Week" in plan_key:
             next_date_dt = now + timedelta(days=7)
-            plan_name = "Премиум, 7 дней (150 генераций)"
-            limit_str = "97" # Хардкод из скрина или расчет, но возьмем из конфига логически
-            # В конфиге лимит 150, но на скрине 97 (видимо, уже потрачено?). 
-            # Для нового юзера это будет 150.
+            period_str = "7 дней"
             limit_str = "150" 
-        elif plan_key == "Month":
+        elif "Month" in plan_key:
             next_date_dt = now + relativedelta(months=1)
-            plan_name = "Премиум, месяц (600 генераций)"
+            period_str = "месяц"
             limit_str = "600"
         else: # Year
             next_date_dt = now + relativedelta(years=1)
-            plan_name = "Премиум, год (7200 генераций)"
+            period_str = "год"
             limit_str = "7200"
             
+        plan_name = f"Премиум {tier_name}, {period_str} ({limit_str} генераций)"
         next_date_str = next_date_dt.strftime("%d.%m.%Y, %H:%M MSK")
 
-        # Текст 1: Поздравление (в точности как на скриншоте)
+        # Текст 1: Поздравление
         text_congrats = (
             "✅ <b>Максимальный доступ включён!</b>\n\n"
             f"✨ Генераций осталось: {limit_str}\n"
@@ -249,15 +265,24 @@ async def cloudpayments_webhook(request: Request, db: Session = Depends(get_db))
     pay_value = ""
     message_id = 0
     
+    # Парсинг InvoiceId: plan_Week_Std_12345_1111_ts
     parts = invoice_id.split("_")
     if len(parts) >= 3:
         pay_type = parts[0]
-        pay_value = parts[1]
-        if not chat_id_str:
-             chat_id_str = parts[2]
-        if len(parts) >= 5: 
-            try: message_id = int(parts[3])
-            except: message_id = 0
+        # Если в parts[2] есть Std или Pro, значит value было с подчеркиванием
+        if pay_type == "plan" and len(parts) > 2 and ("Std" in parts[2] or "Pro" in parts[2]):
+             pay_value = parts[1] + "_" + parts[2]
+             if not chat_id_str: chat_id_str = parts[3]
+             if len(parts) >= 6: 
+                 try: message_id = int(parts[4])
+                 except: message_id = 0
+        else:
+             # Старая логика или пакеты (pkg_150_...)
+             pay_value = parts[1]
+             if not chat_id_str: chat_id_str = parts[2]
+             if len(parts) >= 5: 
+                try: message_id = int(parts[3])
+                except: message_id = 0
 
     if not chat_id_str or not pay_type:
         return Response(content='{"code":0}')
@@ -285,9 +310,9 @@ async def cloudpayments_webhook(request: Request, db: Session = Depends(get_db))
             if sub and sub.current_period_end and sub.current_period_end > start:
                 start = sub.current_period_end
             
-            if conf["rec_interval"] == "Week":
+            if "Week" in conf["rec_interval"]:
                 end = start + timedelta(days=7)
-            elif conf["rec_interval"] == "Month":
+            elif "Month" in conf["rec_interval"]:
                 end = start + relativedelta(months=1)
             else:
                 end = start + relativedelta(years=1)
@@ -305,8 +330,10 @@ async def cloudpayments_webhook(request: Request, db: Session = Depends(get_db))
                 sub.cp_sub_id = cp_sub_id
             
             credits = _get_or_create_credits(db, user.id)
-            limits_map = {"Week": 150, "Month": 600, "Year": 7200}
-            credits.img_limit_base = limits_map.get(pay_value, 0)
+            # Лимиты берем из названий, т.к. конфиг тут только для платежей
+            if "Week" in pay_value: credits.img_limit_base = 150
+            elif "Month" in pay_value: credits.img_limit_base = 600
+            elif "Year" in pay_value: credits.img_limit_base = 7200
             
             db.commit()
             logger.info(f"✅ Subscription saved to DB for {chat_id}")

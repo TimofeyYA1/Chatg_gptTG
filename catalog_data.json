@@ -264,6 +264,16 @@
           { "slot": 3, "title": "В галерее", "prompt": "framed oil painting of a man's face hanging on a red wall in an art gallery, spotlight on painting, realistic museum interior", "is_premium": true },
           { "slot": 4, "title": "В галерее (со зрителем)", "prompt": "wide shot of art gallery, large framed portrait of man on red wall, person sitting on bench viewing the painting from back", "is_premium": true }
         ]
+      },
+      {
+        "page_number": 2,
+        "image_path": "assets/shoots/trends/p2.jpg",
+        "items": [
+          { "slot": 1, "title": "Хоррор-селфи", "prompt": "selfie of a man with horror movie villains, ghostface, pennywise, jason voorhees, chucky, michael myers in background, scary atmosphere, cinematic lighting", "is_premium": true },
+          { "slot": 2, "title": "Крик", "prompt": "man lying on bed talking on landline phone, eating popcorn, ghostface killer standing in dark open doorway background, scream movie scene, tense atmosphere", "is_premium": true },
+          { "slot": 3, "title": "Маска теней", "prompt": "portrait of a man holding a jason voorhees hockey mask covering half his face, smoke, dark moody lighting, friday the 13th style", "is_premium": true },
+          { "slot": 4, "title": "Чаки", "prompt": "man sitting on sofa watching old tv, chucky doll sitting nearby, retro 90s living room, lava lamp, scary movie vibe", "is_premium": true }
+        ]
       }
     ]
   },
@@ -544,6 +554,16 @@
           { "slot": 7, "title": "Гринч", "prompt": "girl sitting inside a claw machine with The Grinch, green neon lighting, pile of grinch toys, cinematic", "is_premium": true },
           { "slot": 8, "title": "В галерее", "prompt": "oil painting of a girl's face hanging on a red wall in art gallery, museum lighting, realistic", "is_premium": true },
           { "slot": 9, "title": "В галерее (со зрителем)", "prompt": "man sitting on green armchair watching a large framed portrait of a girl in art gallery, red wall", "is_premium": true }
+        ]
+      },
+      {
+        "page_number": 2,
+        "image_path": "assets/shoots/f/trends/p2.jpg",
+        "items": [
+          { "slot": 1, "title": "Хоррор-селфи", "prompt": "selfie of a girl with horror movie villains, ghostface, pennywise, jason voorhees, chucky, michael myers in background, scary atmosphere, cinematic lighting", "is_premium": true },
+          { "slot": 2, "title": "Крик", "prompt": "girl lying on bed talking on landline phone, eating popcorn, ghostface killer standing in dark open doorway background, scream movie scene, tense atmosphere", "is_premium": true },
+          { "slot": 3, "title": "Маска теней", "prompt": "portrait of a girl holding a jason voorhees hockey mask covering half her face, smoke, dark moody lighting, friday the 13th style", "is_premium": true },
+          { "slot": 4, "title": "Чаки", "prompt": "girl sitting on sofa watching old tv, chucky doll sitting nearby, retro 90s living room, lava lamp, scary movie vibe", "is_premium": true }
         ]
       }
     ]

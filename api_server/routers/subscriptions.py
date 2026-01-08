@@ -18,15 +18,23 @@ router = APIRouter(tags=["subscriptions"])
 
 
 PLANS = {
-    "Week":  {"price_cents": 300_00,  "rub_price": 399,  "limits": {"messages": 0, "images": 150,  "video": 0}, "duration": {"days": 7}},
-    "Month": {"price_cents": 900_00,  "rub_price": 1199, "limits": {"messages": 0, "images": 600,  "video": 0}, "duration": {"months": 1}},
-    "Year":  {"price_cents": 4500_00, "rub_price": 5999, "limits": {"messages": 0, "images": 7200, "video": 0}, "duration": {"years": 1}},
+    # --- STANDARD ---
+    "Week_Std":  {"price_cents": 399_00,  "rub_price": 399,  "limits": {"messages": 0, "images": 150,  "video": 0}, "duration": {"days": 7}},
+    "Month_Std": {"price_cents": 1199_00, "rub_price": 1199, "limits": {"messages": 0, "images": 600,  "video": 0}, "duration": {"months": 1}},
+    "Year_Std":  {"price_cents": 5999_00, "rub_price": 5999, "limits": {"messages": 0, "images": 7200, "video": 0}, "duration": {"years": 1}},
+
+    # --- PRO ---
+    "Week_Pro":  {"price_cents": 799_00,  "rub_price": 799,  "limits": {"messages": 0, "images": 150,  "video": 0}, "duration": {"days": 7}},
+    "Month_Pro": {"price_cents": 2399_00, "rub_price": 2399, "limits": {"messages": 0, "images": 600,  "video": 0}, "duration": {"months": 1}},
+    "Year_Pro":  {"price_cents": 11999_00, "rub_price": 11999, "limits": {"messages": 0, "images": 7200, "video": 0}, "duration": {"years": 1}},
 }
 
 PLAN_ALIASES = {
-    "Light": "Week", "Max": "Month", "Ultra": "Year",
-    "week": "Week", "month": "Month", "year": "Year",
-    "Week": "Week", "Month": "Month", "Year": "Year",
+    "Week": "Week_Std", "Month": "Month_Std", "Year": "Year_Std",
+    "week": "Week_Std", "month": "Month_Std", "year": "Year_Std",
+    "Week_Std": "Week_Std", "Month_Std": "Month_Std", "Year_Std": "Year_Std",
+    "Week_Pro": "Week_Pro", "Month_Pro": "Month_Pro", "Year_Pro": "Year_Pro",
+    "Light": "Week_Std", "Max": "Month_Std", "Ultra": "Year_Std",
 }
 
 def _norm_plan(p: str) -> str:

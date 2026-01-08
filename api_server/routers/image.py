@@ -5,7 +5,7 @@ from sqlalchemy import select, func
 from typing import Dict, Any, Optional, List
 
 from db_adapter.database import get_db
-from db_adapter.models import User, PremiumCredits, CatalogItem, CatalogPage, CatalogCategory
+from db_adapter.models import User, PremiumCredits, Subscription, CatalogItem, CatalogPage, CatalogCategory
 from api_server.providers.openai_adapter import OpenAIProvider
 import base64
 import logging
@@ -16,7 +16,6 @@ router = APIRouter()
 
 # --- CONSTANTS ---
 
-# Инструкция для сохранения лица (используется ВЕЗДЕ)
 PRESERVE_FACE_INSTRUCTION = (
     "CRITICAL REQUIREMENT: You MUST preserve the exact facial identity, structure, and features of the person from the source image. "
     "The output image must look exactly like the same person. "
@@ -25,7 +24,6 @@ PRESERVE_FACE_INSTRUCTION = (
     "High fidelity face swap."
 )
 
-# Инструкция для сохранения фона (используется ТОЛЬКО В РЕДАКТОРЕ)
 PRESERVE_BACKGROUND_INSTRUCTION = (
     "CRITICAL ENV REQUIREMENT: Keep the original background, environment, lighting, clothing, and pose EXACTLY as they are in the source image. "
     "Do NOT regenerate the background. Do NOT change the location. "
@@ -114,6 +112,14 @@ def _get_prompt_by_global_idx(db: Session, gender: str, cat_slug: str, global_id
     )
     return db.execute(stmt).scalar_one_or_none()
 
+def _is_user_pro(db: Session, user_id: int) -> bool:
+    """Проверяет, является ли подписка пользователя PRO версией."""
+    sub = db.execute(select(Subscription).where(Subscription.user_id == user_id)).scalar_one_or_none()
+    if not sub or not sub.plan:
+        return False
+    # Проверка на наличие 'pro' в названии плана (Week_Pro, Month_Pro)
+    return "pro" in sub.plan.lower()
+
 # --- Routes ---
 
 @router.get("/catalog/info")
@@ -175,26 +181,22 @@ def generate_from_catalog(data: CatalogGenIn, db: Session = Depends(get_db)):
     if not _check_and_increment_limit(db, user):
         return {"ok": False, "error": "limit_exceeded"}
 
+    # Проверяем PRO статус
+    is_pro_user = _is_user_pro(db, user.id)
+
     prompt_parts = []
     
-    # ------------------------------------------------------------------
-    # СЦЕНАРИЙ 1: ФОТОСЕССИЯ (Меняем фон и стиль)
-    # ------------------------------------------------------------------
     if data.shoot_sel and data.shoot_sel.get("cat") and data.shoot_sel.get("idx"):
         cat = data.shoot_sel["cat"]
         idx = int(data.shoot_sel["idx"])
         db_prompt = _get_prompt_by_global_idx(db, data.gender, cat, idx)
         
         if db_prompt:
-            # Просто описание стиля, нейросеть сама поменяет фон под стиль
             prompt_parts.append(f"{db_prompt}")
         else:
             _rollback_limit(db, user)
             return {"ok": False, "error": "preset_not_found"}
 
-    # ------------------------------------------------------------------
-    # СЦЕНАРИЙ 2: РЕДАКТОР (Точечные изменения, сохраняем фон)
-    # ------------------------------------------------------------------
     elif data.editor_sel:
         base = "man" if data.gender == "m" else "woman"
         changes = []
@@ -208,20 +210,14 @@ def generate_from_catalog(data: CatalogGenIn, db: Session = Depends(get_db)):
             return {"ok": False, "error": "no_selection"}
             
         combined_features = ", ".join(changes)
-        
-        # Формулировка для инпеинтинга/редактирования
         prompt_parts.append(f"Modify the {base} in this image: add {combined_features}")
-        
-        # ! ВАЖНО: Добавляем инструкцию сохранить фон
         prompt_parts.append(PRESERVE_BACKGROUND_INSTRUCTION)
     
     else:
         _rollback_limit(db, user)
         return {"ok": False, "error": "no_selection"}
 
-    # Общая инструкция для лица (нужна всегда)
     prompt_parts.append(PRESERVE_FACE_INSTRUCTION)
-    
     final_prompt = ". ".join(prompt_parts)
     logger.info(f"📝 Итоговый промпт: {final_prompt[:200]}...")
 
@@ -232,24 +228,20 @@ def generate_from_catalog(data: CatalogGenIn, db: Session = Depends(get_db)):
         return {"ok": False, "error": "bad_image_b64"}
 
     provider = OpenAIProvider()
-    # Вызываем обновленный метод
-    result = provider.edit_image_b64(raw_image, final_prompt, size="768x768")
+    # ПЕРЕДАЕМ is_pro ФЛАГ
+    result = provider.edit_image_b64(raw_image, final_prompt, size="768x768", is_pro=is_pro_user)
     
     b64 = result.get("b64")
     fail_reason = result.get("reason", "unknown")
 
     if not b64:
-        # Возвращаем кредиты юзеру
         _rollback_limit(db, user)
-        
-        # Формируем понятное сообщение для логов API
         caption_text = "⚠️ Не удалось сгенерировать изображение."
-        
         return {
             "ok": True, 
             "stub": True, 
             "caption": caption_text,
-            "fail_reason": fail_reason  # <--- Передаем код ошибки боту
+            "fail_reason": fail_reason
         }
 
     return {"ok": True, "stub": False, "b64": b64, "caption": "✨ Готово!"}
@@ -259,7 +251,6 @@ def generate_from_catalog(data: CatalogGenIn, db: Session = Depends(get_db)):
 def edit_image(data: ImageEditIn, db: Session = Depends(get_db)):
     """
     Редактирование по СВОЕМУ промпту.
-    Тут мы тоже по умолчанию пытаемся сохранить фон, так как это edit.
     """
     user = db.query(User).filter(User.chat_id == data.chat_id).first()
     if not user:
@@ -268,6 +259,9 @@ def edit_image(data: ImageEditIn, db: Session = Depends(get_db)):
 
     if not _check_and_increment_limit(db, user):
         return {"ok": False, "error": "limit_exceeded"}
+    
+    # Проверяем PRO статус
+    is_pro_user = _is_user_pro(db, user.id)
 
     try:
         raw_image = base64.b64decode(data.image_b64)
@@ -276,24 +270,19 @@ def edit_image(data: ImageEditIn, db: Session = Depends(get_db)):
         return {"ok": False, "error": "bad_image_b64"}
 
     provider = OpenAIProvider()
-    
-    # Собираем промпт: Запрос + Сохранить фон + Сохранить лицо
     full_prompt = f"{data.prompt}.{PRESERVE_FACE_INSTRUCTION}"
     
     logger.info(f"📝 Custom Edit Prompt: {full_prompt[:100]}...")
 
-    # ИЗМЕНЕНИЕ ЗДЕСЬ: result вместо b64 для ясности
-    result = provider.edit_image_b64(raw_image, full_prompt, size=data.size or "768x768")
+    # ПЕРЕДАЕМ is_pro ФЛАГ
+    result = provider.edit_image_b64(raw_image, full_prompt, size=data.size or "768x768", is_pro=is_pro_user)
     
     b64_str = result.get("b64")
     fail_reason = result.get("reason", "unknown")
 
     if not b64_str:
-        # Возвращаем кредиты юзеру
         _rollback_limit(db, user)
-        
         caption_text = "⚠️ Не удалось сгенерировать изображение."
-        
         return {
             "ok": True, 
             "stub": True, 

@@ -68,6 +68,10 @@ CB_SHOOTS = "mode:shoots"
 CB_RESET = "edit:reset"
 CB_GENERATE = "gen:go"
 
+# --- НОВЫЕ КЛЮЧИ ДЛЯ ВЫБОРА ВЕРСИИ ---
+CB_TIER_STD = "tier:std"
+CB_TIER_PRO = "tier:pro"
+
 # Keys for payment plans (Initial click)
 CB_PAY_WEEK = "premium:buy:week"
 CB_PAY_MONTH = "premium:buy:month"
@@ -134,6 +138,11 @@ TEXTS = {
     },
 }
 
+TEXT_TIER_SELECTION = (
+    "😍 <b>Вот твой первый образ!</b>\n\n"
+    "Бесплатный лимит использован. Получи неограниченные новые фото — выбери подходящую версию 👇"
+)
+
 PREMIUM_PAYWALL_CAPTION_RU = (
     "🚀 <b>Для продолжения нужна подписка</b>\n\n"
     "Бесплатной версии больше нет. Оформите доступ, чтобы пользоваться всеми возможностями:\n\n"
@@ -194,7 +203,7 @@ TEXT_PACKAGES_CAPTION = (
 )
 
 TEXT_PAYMENT_CONFIRMATION_RUB = (
-    "Вы приобретаете пакет: <b>Премиум на {period} ({count} генераций) - {price}₽</b>\n"
+    "Вы приобретаете пакет: <b>Премиум {tier_name} на {period} ({count} генераций) - {price}₽</b>\n"
     "Следующее списание: {next_date} - {price}₽\n\n"
     "Нажимая «Оплатить», вы соглашаетесь с <a href='{link_recurring}'>Правилами приема рекуррентных платежей</a>. "
     "Вы сможете отменить подписку в любой момент.\n\n"
@@ -202,6 +211,13 @@ TEXT_PAYMENT_CONFIRMATION_RUB = (
 )
 # ---------- KEYBOARDS ----------
 
+def kb_tier_selection() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✨ Обычная версия", callback_data=CB_TIER_STD)],
+            [InlineKeyboardButton(text="👑 Pro-версия", callback_data=CB_TIER_PRO)],
+        ]
+    )
 
 def kb_pay_rub_confirm(price_rub: int, payload_data: str) -> InlineKeyboardMarkup:
     """Кнопка Оплатить для рублевых платежей (имитация перехода на шлюз)"""
@@ -426,17 +442,35 @@ def kb_shoots_home(lang: str = "ru") -> InlineKeyboardMarkup:
 
 # --- PREMIUM KEYBOARDS ---
 
-def kb_premium_paywall(lang: str = "ru") -> InlineKeyboardMarkup:
-    if lang == "en":
-        w, m, y = "⭐ Купить на неделю", "✨ Купить на месяц", "👑 Купить на год"
+def kb_premium_paywall(lang: str = "ru", tier: str = "std") -> InlineKeyboardMarkup:
+    # Динамические цены в зависимости от выбранного тарифа (tier)
+    if tier == "pro":
+        # Pro Цены
+        p_week = "799₽"
+        p_month = "2399₽"
+        p_year = "11999₽"
     else:
-        w, m, y = "⭐ Купить на неделю", "✨ Купить на месяц", "👑 Купить на год"
+        # Standard Цены
+        p_week = "399₽"
+        p_month = "1199₽"
+        p_year = "5999₽"
+
+    # Суффикс для колбэка, чтобы хендлер знал, какой тариф выбран
+    sfx = f":{tier}"
+
+    if lang == "en":
+        w, m, y = "⭐ Weekly", "✨ Monthly", "👑 Yearly"
+    else:
+        w = "🔓 Неделя — попробовать"
+        m = "✨ Месяц — лучший выбор"
+        y = "👑 Год — максимум выгоды"
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=f"{w} — 399₽ / 300⭐️", callback_data=CB_PAY_WEEK)],
-            [InlineKeyboardButton(text=f"{m} — 1199₽ / 900⭐️", callback_data=CB_PAY_MONTH)],
-            [InlineKeyboardButton(text=f"{y} — 5999₽ / 4500⭐️", callback_data=CB_PAY_YEAR)],
+            [InlineKeyboardButton(text=f"{w} · {p_week}", callback_data=f"{CB_PAY_WEEK}{sfx}")],
+            [InlineKeyboardButton(text=f"{m} · {p_month}", callback_data=f"{CB_PAY_MONTH}{sfx}")],
+            [InlineKeyboardButton(text=f"{y} · {p_year}", callback_data=f"{CB_PAY_YEAR}{sfx}")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="nav:back_to_tiers")]
         ]
     )
 

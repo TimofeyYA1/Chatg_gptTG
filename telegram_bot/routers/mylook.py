@@ -35,24 +35,22 @@ router = Router()
 BUY_LOCK: set[int] = set()
 _MEDIA_CACHE: Dict[str, str] = {}
 
-# ТУТ МЕНЯЕМ ПЕРЕВОД, чтобы подходило под "Премиум, ..."
 PLAN_TRANSLATE = {
-    "Week": "7 дней",
-    "Month": "месяц",
-    "Year": "год",
+    "Week_Std": "7 дней (Обычная)", "Week_Pro": "7 дней (Pro)",
+    "Month_Std": "месяц (Обычная)", "Month_Pro": "месяц (Pro)",
+    "Year_Std": "год (Обычная)",    "Year_Pro": "год (Pro)",
     "free": "нет",
 }
 PLAN_PRICES = {
-    "Week": "399",
-    "Month": "1199",
-    "Year": "5999",
+    "Week_Std": "399",  "Week_Pro": "799",
+    "Month_Std": "1199", "Month_Pro": "2399",
+    "Year_Std": "5999",  "Year_Pro": "11999",
 }
 
-# --- STARS PRICING ---
 STARS_PRICES_SUB = {
-    "Week": 300,
-    "Month": 900,
-    "Year": 4500,
+    "Week_Std": 300,  "Week_Pro": 600,
+    "Month_Std": 900, "Month_Pro": 1800,
+    "Year_Std": 4500, "Year_Pro": 9000,
 }
 STARS_PRICES_PKG = {
     "150": 260,
@@ -70,7 +68,7 @@ def _format_ru_date(iso: str | None) -> str:
     if not iso: return "—"
     try:
         dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
-        return dt.strftime("%d.%m.%Y, %H:%M MSK") # Запятая добавлена по просьбе
+        return dt.strftime("%d.%m.%Y, %H:%M MSK")
     except:
         if "T" in iso: return iso.split("T")[0]
         return iso
@@ -141,6 +139,66 @@ async def _get_status_text(editor_sel: dict, gender: str) -> str:
         lines.append(f"- {cat_name}: {item_name}")
     return "\n".join(lines) + "\n\n"
 
+# --- PANEL HELPERS (MOVED UP FOR SCOPE VISIBILITY) ---
+
+async def panel_send(message: Message | CallbackQuery, state: FSMContext, img_path: str, caption: str, kb=None) -> None:
+    """Универсальная отправка панели. Принимает Message или CallbackQuery."""
+    # Получаем объект message для ответа
+    if isinstance(message, CallbackQuery):
+        msg = message.message
+    else:
+        msg = message
+
+    if not img_path or not os.path.exists(img_path):
+        sent = await msg.answer(caption, reply_markup=kb)
+        await state.update_data(panel_id=sent.message_id)
+        return
+    
+    cached_id = _MEDIA_CACHE.get(img_path)
+    if cached_id: photo_obj = cached_id
+    else: photo_obj = FSInputFile(img_path)
+    
+    try:
+        sent = await msg.answer_photo(photo_obj, caption=caption, reply_markup=kb)
+        if not cached_id and sent.photo: _MEDIA_CACHE[img_path] = sent.photo[-1].file_id
+        await state.update_data(panel_id=sent.message_id)
+    except Exception:
+        if cached_id: del _MEDIA_CACHE[img_path]
+        try:
+             photo_obj = FSInputFile(img_path)
+             sent = await msg.answer_photo(photo_obj, caption=caption, reply_markup=kb)
+             await state.update_data(panel_id=sent.message_id)
+        except Exception as e:
+             print(f"Panel send error: {e}")
+
+async def panel_edit_media(message_obj: Message | CallbackQuery, state: FSMContext, img_path: str, caption: str, kb=None) -> None:
+    """Редактирует медиа в существующем сообщении."""
+    
+    if isinstance(message_obj, CallbackQuery):
+        message = message_obj.message
+        chat_id = message.chat.id
+    else:
+        message = message_obj
+        chat_id = message.chat.id
+
+    data = await state.get_data()
+    msg_id = data.get("panel_id") or message.message_id
+    
+    if not img_path or not os.path.exists(img_path): img_path = img_ui("start")
+    
+    cached_id = _MEDIA_CACHE.get(img_path)
+    if cached_id: media = InputMediaPhoto(media=cached_id, caption=caption)
+    else: media = InputMediaPhoto(media=FSInputFile(img_path), caption=caption)
+    
+    try:
+        res = await message.bot.edit_message_media(chat_id=chat_id, message_id=msg_id, media=media, reply_markup=kb)
+        if not cached_id and isinstance(res, Message) and res.photo: _MEDIA_CACHE[img_path] = res.photo[-1].file_id
+    except TelegramBadRequest: 
+        # Если сообщение не изменилось или удалено
+        pass
+    except Exception: 
+        if cached_id: del _MEDIA_CACHE[img_path]
+
 # -------------------- FSM --------------------
 class Flow(StatesGroup):
     waiting_photo = State()
@@ -170,15 +228,17 @@ async def start(message: Message, state: FSMContext) -> None:
     await state.clear()
     await api_client.ensure_user(message.chat.id)
     
+    # ЛОГИКА СТАРТА
     if await has_generations_async(message.chat.id):
         await state.set_state(Flow.waiting_photo)
         path = img_ui("start")
         caption = ui.TEXTS["ru"]["start_title"]
         await panel_send(message, state, path, caption, kb=None)
     else:
-        path = img_ui("premium_paywall")
-        caption = ui.PREMIUM_PAYWALL_CAPTION_RU
-        kb = ui.kb_premium_paywall("ru")
+        # ПЕЙВОЛЛ (ВЫБОР ВЕРСИИ) -> Картинка compare
+        path = img_ui("compare") 
+        caption = ui.TEXT_TIER_SELECTION
+        kb = ui.kb_tier_selection()
         await panel_send(message, state, path, caption, kb=kb)
 
 @router.message(Command("update_prompts"))
@@ -206,8 +266,9 @@ async def cmd_update_prompts(message: Message):
 @router.message(F.photo, F.caption)
 async def handle_photo_with_prompt(message: Message, state: FSMContext):
     if not await has_generations_async(message.chat.id):
-        path = img_ui("premium_paywall")
-        await panel_send(message, state, path, ui.TEXT_FREE_TRIAL_ENDED, ui.kb_premium_paywall("ru"))
+        # ПЕЙВОЛЛ -> compare
+        path = img_ui("compare")
+        await panel_send(message, state, path, ui.TEXT_TIER_SELECTION, ui.kb_tier_selection())
         return
     photo = message.photo[-1]
     await state.update_data(photo_file_id=photo.file_id)
@@ -224,9 +285,10 @@ async def restart_callback(call: CallbackQuery, state: FSMContext) -> None:
         try: await panel_edit_media(call, state, path, caption, kb=None)
         except: await panel_send(call.message, state, path, caption, kb=None)
     else:
-        path = img_ui("premium_paywall")
-        caption = ui.PREMIUM_PAYWALL_CAPTION_RU
-        kb = ui.kb_premium_paywall("ru")
+        # ПЕЙВОЛЛ -> compare
+        path = img_ui("compare")
+        caption = ui.TEXT_TIER_SELECTION
+        kb = ui.kb_tier_selection()
         try: await panel_edit_media(call, state, path, caption, kb=kb)
         except: await panel_send(call.message, state, path, caption, kb=kb)
     await call.answer()
@@ -252,26 +314,25 @@ async def premium_cmd(message: Message | CallbackQuery, state: FSMContext, is_ed
     role = (summary.get("role") or "free").strip()
     
     if role.lower() == "free":
-        caption = ui.PREMIUM_PAYWALL_CAPTION_RU
-        kb = ui.kb_premium_paywall("ru")
-        img = img_ui("premium_paywall")
+        # Если Free -> compare
+        caption = ui.TEXT_TIER_SELECTION
+        kb = ui.kb_tier_selection()
+        img = img_ui("compare")
     else:
         totals = summary.get("totals", {})
         usage = summary.get("usage", {})
         available = max(0, totals.get("images", 0) - usage.get("images", 0))
         
-        # Формируем строку плана в формате "Премиум, 7 дней (150 генераций)"
         plan_period = PLAN_TRANSLATE.get(role, role)
         base_limit = summary.get("limits", {}).get("images", 0)
         
-        # Полная строка подписки для шаблона
-        plan_name = f"Премиум, {plan_period} ({base_limit} генераций)"
+        plan_type = "Pro" if "Pro" in role else "Обычная"
+        plan_name = f"Премиум {plan_type}, {plan_period} ({base_limit} генераций)"
         
         price = PLAN_PRICES.get(role, "---")
         active_until_str = _format_ru_date(summary.get("active_until"))
         auto_renew = summary.get("auto_renew", True)
         
-        # Формируем строку списания
         if auto_renew:
             renewal_info = f"💳 Следующее списание: {active_until_str} ({price}₽)"
         else:
@@ -329,18 +390,47 @@ async def cancel_sub(call: CallbackQuery, state: FSMContext):
     if res.get("ok"): await call.answer("Автопродление отключено.", show_alert=True); await premium_cmd(call, state, is_edit=True)
     else: await call.answer("Ошибка отмены.", show_alert=True)
 
+# -------------------- TIER SELECTION --------------------
+
+@router.callback_query(F.data == ui.CB_TIER_STD)
+async def on_tier_std(call: CallbackQuery, state: FSMContext):
+    # ОБЫЧНАЯ ВЕРСИЯ -> man.jpg
+    # ПЕРЕДАЕМ CAPTION (можно пустой или ui.PREMIUM_PAYWALL_CAPTION_RU)
+    caption = ui.PREMIUM_PAYWALL_CAPTION_RU 
+    kb = ui.kb_premium_paywall("ru", tier="std")
+    await panel_edit_media(call, state, img_ui("man"), caption='', kb=kb)
+    await call.answer()
+
+@router.callback_query(F.data == ui.CB_TIER_PRO)
+async def on_tier_pro(call: CallbackQuery, state: FSMContext):
+    # PRO ВЕРСИЯ
+    caption = ui.PREMIUM_PAYWALL_CAPTION_RU
+    kb = ui.kb_premium_paywall("ru", tier="pro")
+    await panel_edit_media(call, state, img_ui("man"), caption='', kb=kb)
+    await call.answer()
+
+@router.callback_query(F.data == "nav:back_to_tiers")
+async def on_back_to_tiers(call: CallbackQuery, state: FSMContext):
+    # Возврат к выбору версии -> compare.jpg
+    await panel_edit_media(call, state, img_ui("compare"), caption=ui.TEXT_TIER_SELECTION, kb=ui.kb_tier_selection())
+    await call.answer()
+
 # -------------------- PAYMENT FLOW (RU + STARS) --------------------
 
-# 1. Ask Payment Method for Subscription
 @router.callback_query(F.data.startswith("premium:buy:"))
 async def ask_payment_method_sub(call: CallbackQuery, state: FSMContext):
-    period = call.data.split(":")[-1]  # Week, Month, Year
-    plan_key = period.capitalize()
+    # call.data пример: premium:buy:week:pro или premium:buy:week:std
+    parts = call.data.split(":")
+    period = parts[2] 
+    tier = parts[3] if len(parts) > 3 else "std" 
+    
+    period_cap = period.capitalize()
+    tier_cap = tier.capitalize()
+    plan_key = f"{period_cap}_{tier_cap}"
     
     price_rub = PLAN_PRICES.get(plan_key, "0")
     price_stars = STARS_PRICES_SUB.get(plan_key, 0)
     
-    # Payload format: "plan:Week"
     payload_data = f"plan:{plan_key}"
     
     await call.message.edit_reply_markup(
@@ -348,10 +438,9 @@ async def ask_payment_method_sub(call: CallbackQuery, state: FSMContext):
     )
     await call.answer()
 
-# 2. Ask Payment Method for Packages
 @router.callback_query(F.data.startswith("pkg:"))
 async def ask_payment_method_pkg(call: CallbackQuery, state: FSMContext):
-    pkg_id = call.data.split(":")[-1] # 150, 1000, 5000
+    pkg_id = call.data.split(":")[-1] 
     
     price_rub = RUB_PKG_MAP.get(pkg_id, 0)
     price_stars = STARS_PRICES_PKG.get(pkg_id, 0)
@@ -373,49 +462,46 @@ async def cancel_payment_click(call: CallbackQuery, state: FSMContext):
     await premium_cmd(call, state, is_edit=True)
     await call.answer("Отменено")
 
-# -------------------- 3. Handle RUB Selection (CONFIRMATION + LINK) --------------------
+# -------------------- 3. Handle RUB Selection --------------------
 
 @router.callback_query(F.data.startswith("pay_rub:"))
 async def on_pay_choice_rub(call: CallbackQuery, state: FSMContext):
-    # data: pay_rub:{price}:{payload}
     parts = call.data.split(":")
     price_rub = int(parts[1])
-    payload = ":".join(parts[2:]) # plan:Week или pkg:150
+    payload = ":".join(parts[2:]) 
     
     uid = call.from_user.id
     
-    # 1. Разбираем payload
     try:
-        ptype, pvalue = payload.split(":")
+        ptype, pvalue = payload.split(":", 1)
     except ValueError:
         await call.answer("Ошибка данных", show_alert=True)
         return
     
-    # --- Передаем ID сообщения, чтобы API мог его изменить ---
     message_id = call.message.message_id
-
-    # 2. Сразу формируем ссылку на оплату
     api_url = settings.API_PUBLIC_URL 
     if not api_url.startswith("http"):
         api_url = "http://localhost:8000"
         
-    # Добавляем &message_id=... в ссылку
     payment_link = f"{api_url}/payments/checkout?chat_id={uid}&type={ptype}&value={pvalue}&message_id={message_id}"
     
-    # 3. Генерируем текст подтверждения
     caption = ""
     
     if ptype == "plan":
+        plan_key = pvalue
         now = datetime.now()
-        if pvalue == "Week":
+        
+        tier_name = "Pro" if "Pro" in plan_key else "Обычная"
+        
+        if "Week" in plan_key:
             next_date = now + timedelta(days=7)
             period_str = "7 дней"
             count_str = "150"
-        elif pvalue == "Month":
+        elif "Month" in plan_key:
             next_date = now + timedelta(days=30)
             period_str = "месяц"
             count_str = "600"
-        elif pvalue == "Year":
+        elif "Year" in plan_key:
             next_date = now + timedelta(days=365)
             period_str = "год"
             count_str = "7200"
@@ -427,6 +513,7 @@ async def on_pay_choice_rub(call: CallbackQuery, state: FSMContext):
         next_date_str = next_date.strftime("%d.%m.%Y %H:%M MSK")
         
         caption = ui.TEXT_PAYMENT_CONFIRMATION_RUB.format(
+            tier_name=tier_name,
             period=period_str,
             count=count_str,
             price=price_rub,
@@ -441,13 +528,11 @@ async def on_pay_choice_rub(call: CallbackQuery, state: FSMContext):
             f"🔒 Платеж через сервис CloudPayments."
         )
 
-    # 4. Клавиатура: Кнопка "Оплатить" содержит ссылку
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Оплатить", url=payment_link)], 
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="cancel_payment")]
     ])
 
-    # 5. Показываем экран подтверждения
     await panel_edit_media(
         call, state, 
         img_ui("premium"), 
@@ -456,11 +541,8 @@ async def on_pay_choice_rub(call: CallbackQuery, state: FSMContext):
     )
     await call.answer()
 
-
-# 4. Handle STARS Selection (Send Invoice + Clean up)
 @router.callback_query(F.data.startswith("pay_stars:"))
 async def on_pay_choice_stars(call: CallbackQuery, state: FSMContext):
-    # data: pay_stars:{price}:{payload}
     parts = call.data.split(":")
     price_stars = int(parts[1])
     payload = ":".join(parts[2:])
@@ -470,8 +552,7 @@ async def on_pay_choice_stars(call: CallbackQuery, state: FSMContext):
     
     if payload.startswith("plan:"):
         p_name = payload.split(":")[1]
-        # Example: "Week"
-        title = f"Подписка {p_name}"
+        title = f"Подписка {p_name.replace('_', ' ')}"
         description = f"Премиум доступ на {PLAN_TRANSLATE.get(p_name, p_name)}"
         
     elif payload.startswith("pkg:"):
@@ -485,51 +566,37 @@ async def on_pay_choice_stars(call: CallbackQuery, state: FSMContext):
 
     prices = [LabeledPrice(label="XTR", amount=price_stars)]
     
-    # !!! CLEAN UP PREVIOUS MESSAGE !!!
     try: await call.message.delete()
     except: pass
 
-    # Send Invoice with Cancel Button
     await call.message.answer_invoice(
         title=title,
         description=description,
         prices=prices,
-        provider_token="", # Empty for Stars
-        payload=payload,   # Pass logic data here
+        provider_token="",
+        payload=payload,
         currency="XTR",
         start_parameter="pay",
         reply_markup=ui.kb_cancel_transaction(payload, price_stars) 
     )
     await call.answer()
 
-# 5. Cancel Invoice (Restore Choice)
 @router.callback_query(F.data.startswith("inv_cancel:"))
 async def on_invoice_cancel(call: CallbackQuery, state: FSMContext):
     payload = call.data.split(":", 1)[1]
     
-    # Delete Invoice
     try: await call.message.delete()
     except: pass
     
-    # Restore Panel
-    # Determine what we were buying to restore the correct text/image
-    caption = ""
-    img_path = ""
-    
-    price_rub = 0
-    price_stars = 0
-    
     if payload.startswith("plan:"):
-        # Restore Premium Paywall style
-        caption = ui.PREMIUM_PAYWALL_CAPTION_RU
-        img_path = img_ui("premium_paywall")
-        
-        plan_key = payload.split(":")[1]
-        price_rub = PLAN_PRICES.get(plan_key, "0")
-        price_stars = STARS_PRICES_SUB.get(plan_key, 0)
+        # Если отменили подписку -> Возврат к выбору версии (compare)
+        caption = ui.TEXT_TIER_SELECTION
+        img_path = img_ui("compare")
+        await panel_send(call.message, state, img_path, caption, kb=ui.kb_tier_selection())
+        await call.answer("Возврат к выбору")
+        return
         
     elif payload.startswith("pkg:"):
-        # Restore Packages style
         caption = ui.TEXT_PACKAGES_CAPTION
         img_path = img_ui("packages")
         
@@ -537,20 +604,17 @@ async def on_invoice_cancel(call: CallbackQuery, state: FSMContext):
         price_rub = RUB_PKG_MAP.get(pkg_id, 0)
         price_stars = STARS_PRICES_PKG.get(pkg_id, 0)
 
-    # Send reconstructed message with Choice KB
-    await panel_send(
-        call.message, state, 
-        img_path, caption, 
-        kb=ui.payment_choice_kb(price_rub, price_stars, payload)
-    )
-    await call.answer("Возврат к выбору метода")
+        await panel_send(
+            call.message, state, 
+            img_path, caption, 
+            kb=ui.payment_choice_kb(price_rub, price_stars, payload)
+        )
+        await call.answer("Возврат к выбору метода")
 
-# 6. Pre-Checkout
 @router.pre_checkout_query()
 async def on_pre_checkout(pre_checkout_query: PreCheckoutQuery):
     await pre_checkout_query.answer(ok=True)
 
-# 7. Successful Payment
 @router.message(F.content_type == ContentType.SUCCESSFUL_PAYMENT)
 async def on_successful_payment(message: Message, state: FSMContext):
     pmt = message.successful_payment
@@ -628,8 +692,9 @@ async def choose_gender(call: CallbackQuery, state: FSMContext) -> None:
     gender = "m" if call.data == ui.CB_STYLES_M else "f"
     await state.update_data(styles_gender=gender)
     if not await has_generations_async(call.from_user.id):
-        img = img_ui("premium_paywall") or img_ui("premium")
-        await panel_edit_media(call, state, img, ui.PREMIUM_PAYWALL_CAPTION_RU, ui.kb_premium_paywall("ru"))
+        # ПЕЙВОЛЛ -> compare
+        img = img_ui("compare")
+        await panel_edit_media(call, state, img, ui.TEXT_TIER_SELECTION, ui.kb_tier_selection())
         await call.answer(); return
     await state.set_state(Flow.main_menu)
     await state.update_data(editor_sel={}, shoot_sel={}) 
@@ -647,8 +712,9 @@ async def back_to_gender(call: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data == ui.CB_CUSTOM_PROMPT)
 async def custom_prompt_click(call: CallbackQuery, state: FSMContext) -> None:
     if not await has_generations_async(call.from_user.id):
-        path = img_ui("premium_paywall")
-        await panel_edit_media(call, state, path, ui.TEXT_FREE_TRIAL_ENDED, ui.kb_premium_paywall("ru"))
+        # ПЕЙВОЛЛ -> compare
+        path = img_ui("compare")
+        await panel_edit_media(call, state, path, ui.TEXT_TIER_SELECTION, ui.kb_tier_selection())
         await call.answer()
         return
     
@@ -661,8 +727,9 @@ async def handle_custom_prompt_text(message: Message, state: FSMContext) -> None
     prompt = message.text
     if not prompt: return
     if not await has_generations_async(message.chat.id):
-        path = img_ui("premium_paywall")
-        await panel_send(message, state, path, ui.TEXT_FREE_TRIAL_ENDED, ui.kb_premium_paywall("ru"))
+        # ПЕЙВОЛЛ -> compare
+        path = img_ui("compare")
+        await panel_send(message, state, path, ui.TEXT_TIER_SELECTION, ui.kb_tier_selection())
         return
     await state.update_data(last_custom_prompt=prompt)
     await _process_generation(message, state, prompt=prompt, is_new_message=True)
@@ -670,8 +737,9 @@ async def handle_custom_prompt_text(message: Message, state: FSMContext) -> None
 @router.callback_query(F.data == ui.CB_MENU)
 async def back_to_main_menu(call: CallbackQuery, state: FSMContext) -> None:
     if not await has_generations_async(call.from_user.id):
-        img = img_ui("premium_paywall") or img_ui("premium")
-        await panel_edit_media(call, state, img, ui.PREMIUM_PAYWALL_CAPTION_RU, ui.kb_premium_paywall("ru"))
+        # ПЕЙВОЛЛ -> compare
+        img = img_ui("compare")
+        await panel_edit_media(call, state, img, ui.TEXT_TIER_SELECTION, ui.kb_tier_selection())
         await call.answer(); return
     await state.set_state(Flow.main_menu)
     await _show_main_menu(call, state)
@@ -794,8 +862,9 @@ async def _render_page(call: CallbackQuery, state: FSMContext, mode: str, cat: s
 @router.callback_query(F.data == ui.CB_GENERATE)
 async def generate(call: CallbackQuery, state: FSMContext) -> None:
     if not await has_generations_async(call.from_user.id):
-        path = img_ui("premium_paywall")
-        await panel_send(call.message, state, path, ui.TEXT_FREE_TRIAL_ENDED, ui.kb_premium_paywall("ru"))
+        # ПЕЙВОЛЛ -> compare
+        path = img_ui("compare")
+        await panel_send(call.message, state, path, ui.TEXT_TIER_SELECTION, ui.kb_tier_selection())
         await call.answer()
         return
 
@@ -806,21 +875,36 @@ async def generate(call: CallbackQuery, state: FSMContext) -> None:
 
     await call.answer()
     
-    # Сбрасываем кастомный промпт
     await state.update_data(last_custom_prompt=None)
     await _process_generation(call.message, state, is_new_message=False)
 
 
 @router.callback_query(F.data == ui.CB_REGENERATE)
 async def on_regenerate(call: CallbackQuery, state: FSMContext):
+    """
+    Пользователь нажал 'Сделать снова'
+    """
+    # 1. Проверяем лимиты
     if not await has_generations_async(call.from_user.id):
-        path = img_ui("premium_paywall")
-        await panel_send(call.message, state, path, ui.TEXT_FREE_TRIAL_ENDED, ui.kb_premium_paywall("ru"))
+        path = img_ui("compare")
+        await panel_send(call.message, state, path, ui.TEXT_TIER_SELECTION, ui.kb_tier_selection())
         await call.answer()
         return
     
-    await call.answer()
+    # 2. Проверяем, есть ли данные для регенерации
     data = await state.get_data()
+    photo_file_id = data.get("photo_file_id")
+    
+    # Если данных нет (например, после 'Новый образ' стейт очистился или перезагрузка), просим фото
+    if not photo_file_id:
+        await call.answer()
+        # Переводим в ожидание фото
+        await state.set_state(Flow.waiting_photo)
+        await call.message.answer(ui.TEXTS["ru"]["new_photo_req"])
+        return
+
+    # 3. Если данные есть -> запускаем регенерацию
+    await call.answer()
     prompt = data.get("last_custom_prompt")
     await _process_generation(call.message, state, prompt=prompt, is_new_message=True)
 
@@ -864,14 +948,22 @@ async def _process_generation(message: Message, state: FSMContext, prompt: str =
                 file_bytes = base64.b64decode(res_b64)
                 input_file = BufferedInputFile(file_bytes, filename="result.jpg")
                 
+                # --- ЛОГИКА ПОДПИСИ ДЛЯ БЕСПЛАТНЫХ ЮЗЕРОВ ---
+                summary = await api_client.get_sub_summary(message.chat.id)
+                role = (summary.get("role") or "free").strip().lower()
+                
+                final_caption = ui.TEXTS["ru"]["result_caption"]
+                if role == "free":
+                    final_caption += "\n\n✨ Создано с помощью Pro-версии"
+
                 if is_new_message:
-                    await message.answer_photo(input_file, caption=ui.TEXTS["ru"]["result_caption"], reply_markup=ui.kb_result_actions("ru"))
+                    await message.answer_photo(input_file, caption=final_caption, reply_markup=ui.kb_result_actions("ru"))
                 else:
-                    media = InputMediaPhoto(media=input_file, caption=ui.TEXTS["ru"]["result_caption"])
+                    media = InputMediaPhoto(media=input_file, caption=final_caption)
                     try:
                         await message.edit_media(media=media, reply_markup=ui.kb_result_actions("ru"))
                     except TelegramBadRequest:
-                        await message.answer_photo(input_file, caption=ui.TEXTS["ru"]["result_caption"], reply_markup=ui.kb_result_actions("ru"))
+                        await message.answer_photo(input_file, caption=final_caption, reply_markup=ui.kb_result_actions("ru"))
                 
                 await state.update_data(last_result_b64=res_b64)
                 doc_file = BufferedInputFile(file_bytes, filename="mylook_result.jpg")
@@ -882,7 +974,6 @@ async def _process_generation(message: Message, state: FSMContext, prompt: str =
                 is_stub = res.get("stub")
                 fail_reason = res.get("fail_reason", "unknown")
                 
-                # Словарь переводов ошибок
                 error_messages = {
                     "safety_filter": "🔞 <b>Нейросеть заблокировала генерацию.</b>\nПохоже, фото содержит лицо, которое алгоритмы Google сочли небезопасным (Safety Filter). Попробуйте другое фото или менее вызывающий стиль.",
                     "model_refusal": "🤖 Нейросеть отказалась обрабатывать этот запрос.",
@@ -901,9 +992,10 @@ async def _process_generation(message: Message, state: FSMContext, prompt: str =
         else:
             err = res.get("error", "unknown")
             if err == "limit_exceeded":
-                path = img_ui("premium_paywall")
-                caption = ui.TEXT_FREE_TRIAL_ENDED
-                kb = ui.kb_premium_paywall("ru")
+                # ПЕЙВОЛЛ -> compare
+                path = img_ui("compare")
+                caption = ui.TEXT_TIER_SELECTION
+                kb = ui.kb_tier_selection()
                 await panel_send(message, state, path, caption, kb)
             else:
                 await message.answer(f"❌ Ошибка API: {err}")
@@ -930,8 +1022,9 @@ async def on_save_file(call: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == ui.CB_GEN_SAME_PHOTO)
 async def on_gen_same_photo(call: CallbackQuery, state: FSMContext):
     if not await has_generations_async(call.from_user.id):
-        path = img_ui("premium_paywall")
-        await panel_send(call.message, state, path, ui.TEXT_FREE_TRIAL_ENDED, ui.kb_premium_paywall("ru"))
+        # ПЕЙВОЛЛ -> compare
+        path = img_ui("compare")
+        await panel_send(call.message, state, path, ui.TEXT_TIER_SELECTION, ui.kb_tier_selection())
         await call.answer(); return
 
     await state.update_data(shoot_sel={}, editor_sel={})
@@ -944,77 +1037,33 @@ async def on_gen_same_photo(call: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == ui.CB_GEN_NEW_PHOTO)
 async def on_gen_new_photo(call: CallbackQuery, state: FSMContext):
-    await state.clear()
-    
-    if await has_generations_async(call.from_user.id):
-        await state.set_state(Flow.waiting_photo)
-        # ИСПОЛЬЗУЕМ ОБЫЧНОЕ СООБЩЕНИЕ ВМЕСТО PANEL_SEND
-        await call.message.answer(ui.TEXTS["ru"]["new_photo_req"])
-    else:
-        path = img_ui("premium_paywall")
-        caption = ui.TEXT_FREE_TRIAL_ENDED
-        kb = ui.kb_premium_paywall("ru")
+    """
+    Пользователь хочет сгенерировать новое фото.
+    Мы не сразу показываем пейволл, а просим прислать новое фото.
+    """
+    # 1. Проверяем лимиты
+    if not await has_generations_async(call.from_user.id):
+        # Если лимитов нет -> ПЕЙВОЛЛ (compare)
+        path = img_ui("compare")
+        caption = ui.TEXT_TIER_SELECTION
+        kb = ui.kb_tier_selection()
         await panel_send(call.message, state, path, caption, kb=kb)
-    await call.answer()
-
-
-# --- PANEL HELPERS ---
-async def panel_send(message: Message | CallbackQuery, state: FSMContext, img_path: str, caption: str, kb=None) -> None:
-    """Универсальная отправка панели. Принимает Message или CallbackQuery."""
-    # Получаем объект message для ответа
-    if isinstance(message, CallbackQuery):
-        msg = message.message
-    else:
-        msg = message
-
-    if not img_path or not os.path.exists(img_path):
-        sent = await msg.answer(caption, reply_markup=kb)
-        await state.update_data(panel_id=sent.message_id)
+        await call.answer()
         return
-    
-    cached_id = _MEDIA_CACHE.get(img_path)
-    if cached_id: photo_obj = cached_id
-    else: photo_obj = FSInputFile(img_path)
-    
-    try:
-        sent = await msg.answer_photo(photo_obj, caption=caption, reply_markup=kb)
-        if not cached_id and sent.photo: _MEDIA_CACHE[img_path] = sent.photo[-1].file_id
-        await state.update_data(panel_id=sent.message_id)
-    except Exception:
-        if cached_id: del _MEDIA_CACHE[img_path]
-        # Рекурсия с очищенным кэшем, но нужно быть осторожным. 
-        # Проще попробовать отправить как файл заново.
-        try:
-             photo_obj = FSInputFile(img_path)
-             sent = await msg.answer_photo(photo_obj, caption=caption, reply_markup=kb)
-             await state.update_data(panel_id=sent.message_id)
-        except Exception as e:
-             print(f"Panel send error: {e}")
 
-async def panel_edit_media(message_obj: Message | CallbackQuery, state: FSMContext, img_path: str, caption: str, kb=None) -> None:
-    """Редактирует медиа в существующем сообщении."""
+    # 2. Если лимиты есть -> Сбрасываем стейт и просим фото
+    # НЕ делаем state.clear() сразу, чтобы сохранить старые данные на случай "отмены", 
+    # но в данном контексте "Новый образ" подразумевает полный сброс.
+    # Чтобы "Сделать снова" не падало, нужно, чтобы пользователь НЕ нажимал "Новый образ" если хочет перегенерировать старое.
+    # Но если он нажал, а потом передумал и нажал "Сделать снова" на СТАРОМ сообщении...
+    # То у нас проблема: state уже очищен.
     
-    if isinstance(message_obj, CallbackQuery):
-        message = message_obj.message
-        chat_id = message.chat.id
-    else:
-        message = message_obj
-        chat_id = message.chat.id
-
-    data = await state.get_data()
-    msg_id = data.get("panel_id") or message.message_id
+    # РЕШЕНИЕ: Мы не делаем state.clear() здесь. Мы просто переводим в waiting_photo.
+    # Старые данные (photo_file_id) останутся в state, пока не придет новое фото.
+    # Новое фото перезапишет photo_file_id.
     
-    if not img_path or not os.path.exists(img_path): img_path = img_ui("start")
+    await state.set_state(Flow.waiting_photo)
     
-    cached_id = _MEDIA_CACHE.get(img_path)
-    if cached_id: media = InputMediaPhoto(media=cached_id, caption=caption)
-    else: media = InputMediaPhoto(media=FSInputFile(img_path), caption=caption)
-    
-    try:
-        res = await message.bot.edit_message_media(chat_id=chat_id, message_id=msg_id, media=media, reply_markup=kb)
-        if not cached_id and isinstance(res, Message) and res.photo: _MEDIA_CACHE[img_path] = res.photo[-1].file_id
-    except TelegramBadRequest: 
-        # Если сообщение не изменилось или удалено
-        pass
-    except Exception: 
-        if cached_id: del _MEDIA_CACHE[img_path]
+    # Отправляем сообщение-просьбу
+    await call.message.answer(ui.TEXTS["ru"]["new_photo_req"])
+    await call.answer()

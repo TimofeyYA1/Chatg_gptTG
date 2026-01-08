@@ -96,7 +96,7 @@ class OpenAIProvider:
 
     # ------------- IMAGE -------------
 
-    def _edit_image_with_nano(self, image_bytes: bytes, prompt: str) -> Dict[str, Any]:
+    def _edit_image_with_nano(self, image_bytes: bytes, prompt: str, is_pro: bool = False) -> Dict[str, Any]:
         """
         Возвращает словарь:
         {
@@ -109,11 +109,21 @@ class OpenAIProvider:
         if Image is None: 
             return {"b64": None, "reason": "pillow_missing"}
 
-        primary_model = os.getenv("NANOBANANA_MODEL_IMAGE") or getattr(settings, "NANOBANANA_MODEL_IMAGE", "gemini-2.0-flash-exp")
+        # --- МОДЕЛИ ИЗ КОНФИГА ---
+        # PRIMARY (она же PRO) -> gemini-3-pro-image-preview
+        primary_model = os.getenv("NANOBANANA_MODEL_IMAGE") or getattr(settings, "NANOBANANA_MODEL_IMAGE", "gemini-3-pro-image-preview")
+        # FALLBACK (она же STANDARD) -> gemini-2.0-flash-exp
         fallback_model = os.getenv("NANOBANANA_MODEL_IMAGE_FALLBACK") or getattr(settings, "NANOBANANA_MODEL_IMAGE_FALLBACK", "gemini-2.0-flash-exp")
         
-        models_to_try = [primary_model]
-        if fallback_model and fallback_model != primary_model:
+        models_to_try = []
+
+        if is_pro:
+            # Юзер PRO: Сначала Primary (Pro), затем Fallback (Std)
+            models_to_try.append(primary_model)
+            if fallback_model != primary_model:
+                models_to_try.append(fallback_model)
+        else:
+            # Юзер ОБЫЧНЫЙ: Только Fallback (Std)
             models_to_try.append(fallback_model)
 
         max_retries = getattr(settings, "NANOBANANA_MAX_RETRIES", 2)
@@ -138,7 +148,7 @@ class OpenAIProvider:
         for model_name in models_to_try:
             for attempt in range(1, max_retries + 1):
                 try:
-                    logger.info(f"🎨 GenAI ({model_name}) attempt {attempt}...")
+                    logger.info(f"🎨 GenAI Attempt ({model_name}). User Pro: {is_pro}. Attempt {attempt}...")
                     
                     response = self._nano_client.models.generate_content(
                         model=model_name,
@@ -146,40 +156,31 @@ class OpenAIProvider:
                         config=config
                     )
 
-                    # 1. Если кандидатов нет вообще (Жесткий фильтр на входе)
                     if not response.candidates:
                         logger.warning(f"⚠️ Пустой ответ от {model_name} (Safety filter?)")
                         last_error = "safety_filter"
                         break 
 
-                    # 2. Берем первого кандидата
                     candidate = response.candidates[0]
 
-                    # 3. ВАЖНАЯ ПРОВЕРКА: Есть ли контент внутри кандидата?
-                    # Если модель отказалась (FinishReason: SAFETY, RECITATION, OTHER), content может быть None
                     if not candidate.content or not candidate.content.parts:
                         finish_reason = getattr(candidate, 'finish_reason', 'UNKNOWN')
                         logger.warning(f"⚠️ Модель {model_name} вернула кандидата без контента. FinishReason: {finish_reason}")
                         
-                        # Если причина - безопасность, ставим соответствующую ошибку
                         if str(finish_reason) in ["SAFETY", "BLOCK_LOW_AND_ABOVE", "BLOCK_MEDIUM_AND_ABOVE"]:
                             last_error = "safety_filter"
                         else:
                             last_error = "model_refusal"
                         
-                        # Пробуем следующий попытку или модель
                         time.sleep(1)
                         continue
 
-                    # 4. Если контент есть, парсим картинку
                     for part in candidate.content.parts:
                         if part.inline_data and part.inline_data.data:
-                            # УСПЕХ
                             raw = part.inline_data.data
                             if isinstance(raw, str): raw = base64.b64decode(raw)
                             out_img = Image.open(io.BytesIO(raw))
                             buf = io.BytesIO()
-                            # Используем JPEG для экономии размера
                             out_img.save(buf, format="JPEG", quality=90)
                             return {"b64": base64.b64encode(buf.getvalue()).decode("utf-8"), "reason": None}
                         
@@ -187,16 +188,15 @@ class OpenAIProvider:
                             logger.warning(f"⚠️ Model refused with text: {part.text[:100]}...")
                             last_error = "model_refusal"
 
-                    logger.warning(f"⚠️ Нет данных изображения от {model_name} (структура ответа корректна, но данных нет)")
+                    logger.warning(f"⚠️ Нет данных изображения от {model_name}")
                     time.sleep(1)
 
                 except Exception as e:
                     err_str = str(e)
-                    # Если 404 - модели нет, сразу пробуем следующую
                     if "404" in err_str and "NOT_FOUND" in err_str:
                         logger.error(f"❌ Модель {model_name} не найдена (404). Проверь название в .env")
                         last_error = "model_not_found"
-                        break # Переход к следующей модели в models_to_try
+                        break 
                     
                     if "429" in err_str or "Resource exhausted" in err_str:
                         logger.warning(f"🚫 Лимиты {model_name}. Break.")
@@ -209,17 +209,16 @@ class OpenAIProvider:
             
         return {"b64": None, "reason": last_error}
 
-    def edit_image_b64(self, image_bytes: bytes, prompt: str, size: str = "1024x1024") -> Dict[str, Any]:
+    def edit_image_b64(self, image_bytes: bytes, prompt: str, size: str = "1024x1024", is_pro: bool = False) -> Dict[str, Any]:
         """
-        Публичный метод. Возвращает {"b64": ..., "reason": ...}
+        Публичный метод.
         """
         p = (prompt or "").strip()
         if not p or not image_bytes: 
             return {"b64": None, "reason": "empty_input"}
         
-        # Если включен Gemini (NanoBanana)
         if self._nano_enabled():
-            return self._edit_image_with_nano(image_bytes, p)
+            # Передаем is_pro в приватный метод
+            return self._edit_image_with_nano(image_bytes, p, is_pro=is_pro)
         
-        # Заглушка, если ничего не включено
         return {"b64": None, "reason": "no_provider_enabled"}
