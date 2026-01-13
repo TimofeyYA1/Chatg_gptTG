@@ -139,8 +139,8 @@ TEXTS = {
 }
 
 TEXT_TIER_SELECTION = (
-    "😍 <b>Вот твой первый образ!</b>\n\n"
-    "Бесплатный лимит использован. Получи неограниченные новые фото — выбери подходящую версию 👇"
+    "😍 <b>Тебе понравился результат?</b>\n\n"
+    "Продолжай создавать новые образы без ограничений — выбери версию 👇"
 )
 
 PREMIUM_PAYWALL_CAPTION_RU = (
@@ -465,11 +465,12 @@ def kb_premium_paywall(lang: str = "ru", tier: str = "std") -> InlineKeyboardMar
         m = "✨ Месяц — лучший выбор"
         y = "👑 Год — максимум выгоды"
 
+    # ВРЕМЕННО: Оставляем только Месяц
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=f"{w} · {p_week}", callback_data=f"{CB_PAY_WEEK}{sfx}")],
+            # [InlineKeyboardButton(text=f"{w} · {p_week}", callback_data=f"{CB_PAY_WEEK}{sfx}")],
             [InlineKeyboardButton(text=f"{m} · {p_month}", callback_data=f"{CB_PAY_MONTH}{sfx}")],
-            [InlineKeyboardButton(text=f"{y} · {p_year}", callback_data=f"{CB_PAY_YEAR}{sfx}")],
+            # [InlineKeyboardButton(text=f"{y} · {p_year}", callback_data=f"{CB_PAY_YEAR}{sfx}")],
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="nav:back_to_tiers")]
         ]
     )

@@ -16,7 +16,7 @@ async def on_startup(bot):
 dp.startup.register(on_startup)
 
 async def main():
-    await dp.start_polling(bot, allowed_updates=None)
+    await dp.start_polling(bot, allowed_updates=["message", "edited_message", "callback_query", "pre_checkout_query"])
 
 if __name__ == "__main__":
     asyncio.run(main())

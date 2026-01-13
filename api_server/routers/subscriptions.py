@@ -20,12 +20,12 @@ router = APIRouter(tags=["subscriptions"])
 PLANS = {
     # --- STANDARD ---
     "Week_Std":  {"price_cents": 399_00,  "rub_price": 399,  "limits": {"messages": 0, "images": 150,  "video": 0}, "duration": {"days": 7}},
-    "Month_Std": {"price_cents": 1199_00, "rub_price": 1199, "limits": {"messages": 0, "images": 600,  "video": 0}, "duration": {"months": 1}},
+    "Month_Std": {"price_cents": 1199_00, "rub_price": 1199, "limits": {"messages": 0, "images": 300,  "video": 0}, "duration": {"months": 1}},
     "Year_Std":  {"price_cents": 5999_00, "rub_price": 5999, "limits": {"messages": 0, "images": 7200, "video": 0}, "duration": {"years": 1}},
 
     # --- PRO ---
     "Week_Pro":  {"price_cents": 799_00,  "rub_price": 799,  "limits": {"messages": 0, "images": 150,  "video": 0}, "duration": {"days": 7}},
-    "Month_Pro": {"price_cents": 2399_00, "rub_price": 2399, "limits": {"messages": 0, "images": 600,  "video": 0}, "duration": {"months": 1}},
+    "Month_Pro": {"price_cents": 2399_00, "rub_price": 2399, "limits": {"messages": 0, "images": 300,  "video": 0}, "duration": {"months": 1}},
     "Year_Pro":  {"price_cents": 11999_00, "rub_price": 11999, "limits": {"messages": 0, "images": 7200, "video": 0}, "duration": {"years": 1}},
 }
 

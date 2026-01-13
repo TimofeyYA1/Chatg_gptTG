@@ -60,7 +60,7 @@ STARS_PRICES_PKG = {
 
 RUB_PKG_MAP = {"150": 349, "1000": 1999, "5000": 5999}
 
-ADMIN_IDS = [847867090] 
+ADMIN_IDS = [847867090,370260285] 
 
 # -------------------- Utils --------------------
 
@@ -209,7 +209,61 @@ class Flow(StatesGroup):
     shoots_home = State()
     waiting_custom_prompt = State()
 
-# -------------------- COMMANDS --------------------
+
+    @router.edited_message(F.caption)
+    async def handle_edited_caption(message: Message, state: FSMContext):
+        """
+        Сценарий 1: Пользователь изменил подпись ПОД фото.
+        """
+        # 1. Проверяем подписку
+        if not await has_generations_async(message.chat.id):
+            return
+
+        # 2. Получаем новый текст подписи
+        new_prompt = message.caption
+        if not new_prompt:
+            return
+
+        # 3. ВАЖНЫЙ МОМЕНТ:
+        # Если редактируется сообщение с фото, значит фото точно есть в этом сообщении.
+        # Обновляем photo_file_id в стейте, чтобы генерация шла именно по этому фото,
+        # даже если в памяти "висело" другое.
+        if message.photo:
+            await state.update_data(photo_file_id=message.photo[-1].file_id)
+
+        # 4. Обновляем промпт и генерируем
+        await state.update_data(last_custom_prompt=new_prompt)
+        
+        # is_new_message=True — пришлет результат новым сообщением
+        await _process_generation(message, state, prompt=new_prompt, is_new_message=True)
+    # -------------------- COMMANDS --------------------
+
+
+    @router.edited_message(F.text & ~F.text.startswith("/"))
+    async def handle_edited_message(message: Message, state: FSMContext):
+        """
+        Обработка редактирования сообщения.
+        Если пользователь изменил текст промпта — запускаем генерацию заново с новым текстом.
+        """
+        # 1. Проверяем подписку/лимиты
+        if not await has_generations_async(message.chat.id):
+            return  # Игнорируем эдиты, если нет подписки (чтобы не спамить пейволлом на каждый чих)
+
+        # 2. Проверяем, есть ли активное фото в стейте
+        data = await state.get_data()
+        if not data.get("photo_file_id"):
+            return  # Если фото нет, редактирование текста нас не интересует
+
+        # 3. Обновляем промпт и запускаем генерацию
+        new_prompt = message.text.strip()
+        if not new_prompt:
+            return
+
+        await state.update_data(last_custom_prompt=new_prompt)
+        
+        # Сообщаем пользователю (опционально) и генерируем
+        # is_new_message=True заставит бота прислать свежий результат отдельным сообщением
+        await _process_generation(message, state, prompt=new_prompt, is_new_message=True)
 
 @router.message(Command("set_menu"))
 async def set_menu_command(message: Message):
@@ -293,6 +347,31 @@ async def restart_callback(call: CallbackQuery, state: FSMContext) -> None:
         except: await panel_send(call.message, state, path, caption, kb=kb)
     await call.answer()
 
+@router.message(F.text & ~F.text.startswith("/"))
+async def handle_any_text_prompt(message: Message, state: FSMContext):
+    """
+    Задача 1: Если человек скинул фото без подписи (мы его сохранили),
+    а следующим сообщением пишет текст — считаем это промптом.
+    """
+    # 1. Проверяем подписку
+    if not await has_generations_async(message.chat.id):
+        path = img_ui("compare")
+        await panel_send(message, state, path, ui.TEXT_TIER_SELECTION, ui.kb_tier_selection())
+        return
+
+    # 2. Проверяем, есть ли фото в состоянии
+    data = await state.get_data()
+    if not data.get("photo_file_id"):
+        # Если фото нет, возможно это просто чат или ошибка.
+        # Можно отправить help или проигнорировать.
+        # Для UX лучше сказать "Сначала фото".
+        await message.answer("📸 Сначала отправьте фото, которое хотите изменить.")
+        return
+
+    # 3. Если фото есть — считаем текст промптом
+    prompt = message.text
+    await state.update_data(last_custom_prompt=prompt)
+    await _process_generation(message, state, prompt=prompt, is_new_message=True)
 
 # -------------------- PREMIUM / ACCOUNT / HELP / PACKAGES --------------------
 
@@ -500,7 +579,7 @@ async def on_pay_choice_rub(call: CallbackQuery, state: FSMContext):
         elif "Month" in plan_key:
             next_date = now + timedelta(days=30)
             period_str = "месяц"
-            count_str = "600"
+            count_str = "300"
         elif "Year" in plan_key:
             next_date = now + timedelta(days=365)
             period_str = "год"

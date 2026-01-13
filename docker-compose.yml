@@ -3,12 +3,8 @@ version: "3.9"
 services:
   db:
     image: postgres:16
-    # ВАЖНОЕ ИЗМЕНЕНИЕ: Читаем переменные напрямую из файла, 
-    # минуя глючную подстановку Docker-compose
     env_file:
       - .env
-    # Healthcheck теперь использует явного пользователя 'postgres', 
-    # так как это дефолт и это надежнее
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -28,7 +24,6 @@ services:
     ports:
       - "8080:8000"
     entrypoint: ["/bin/bash", "docker/entrypoint_api.sh"]
-    # Простая проверка через curl
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/healthz || exit 1"]
       interval: 10s
@@ -57,9 +52,22 @@ services:
       - .env
     environment:
       - DB_HOST=db
-      # Тут оставляем как есть, backup_service не критичен к старту
       - ADMIN_CHAT_ID=847867090
     restart: always
 
+  metabase:
+    image: metabase/metabase:latest
+    container_name: analytics_metabase
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      MB_DB_FILE: /metabase-data/metabase.db
+    volumes:
+      - metabase_data:/metabase-data
+    depends_on:
+      - db
+
 volumes:
   db_data:
+  metabase_data:
