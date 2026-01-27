@@ -742,18 +742,32 @@ async def on_goto_edit(call: CallbackQuery, state: FSMContext):
     await panel_send(call.message, state, img_ui("start"), ui.TEXTS["ru"]["start_title"], kb=None)
     await call.answer()
 
-@router.message(Flow.waiting_photo, F.photo)
+@router.message(F.photo)
 async def got_photo(message: Message, state: FSMContext) -> None:
+    # Если нет подписки/лимитов — пейволл
+    if not await has_generations_async(message.chat.id):
+        path = img_ui("compare")
+        await panel_send(message, state, path, ui.TEXT_TIER_SELECTION, ui.kb_tier_selection())
+        return
+
     photo = message.photo[-1]
     await state.update_data(photo_file_id=photo.file_id)
+
+    # Всегда ведём пользователя в “после фото”
     await _after_photo_received(message, state)
 
-@router.message(Flow.waiting_photo, F.document)
+@router.message(F.document)
 async def got_document_photo(message: Message, state: FSMContext) -> None:
+    if not await has_generations_async(message.chat.id):
+        path = img_ui("compare")
+        await panel_send(message, state, path, ui.TEXT_TIER_SELECTION, ui.kb_tier_selection())
+        return
+
     doc = message.document
     if not doc.mime_type or not doc.mime_type.startswith("image/"):
         await message.answer("❌ Пожалуйста, отправьте именно изображение (JPG/PNG).")
         return
+
     await state.update_data(photo_file_id=doc.file_id)
     await _after_photo_received(message, state)
 
