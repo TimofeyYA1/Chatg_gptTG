@@ -43,7 +43,7 @@ PLAN_TRANSLATE = {
 }
 PLAN_PRICES = {
     "Week_Std": "399",  "Week_Pro": "799",
-    "Month_Std": "1199", "Month_Pro": "2399",
+    "Month_Std": "1", "Month_Pro": "2",
     "Year_Std": "5999",  "Year_Pro": "11999",
 }
 
@@ -393,10 +393,9 @@ async def premium_cmd(message: Message | CallbackQuery, state: FSMContext, is_ed
     role = (summary.get("role") or "free").strip()
     
     if role.lower() == "free":
-        # Если Free -> compare
-        caption = ui.TEXT_TIER_SELECTION
-        kb = ui.kb_tier_selection()
-        img = img_ui("compare")
+        caption = ui.PREMIUM_PAYWALL_CAPTION_RU
+        kb = ui.kb_premium_paywall("ru")
+        img = img_ui("premium_paywall")
     else:
         totals = summary.get("totals", {})
         usage = summary.get("usage", {})
@@ -405,8 +404,7 @@ async def premium_cmd(message: Message | CallbackQuery, state: FSMContext, is_ed
         plan_period = PLAN_TRANSLATE.get(role, role)
         base_limit = summary.get("limits", {}).get("images", 0)
         
-        plan_type = "Pro" if "Pro" in role else "Обычная"
-        plan_name = f"Премиум {plan_type}, {plan_period} ({base_limit} генераций)"
+        plan_name = f"Премиум, {plan_period} ({base_limit} генераций)"
         
         price = PLAN_PRICES.get(role, "---")
         active_until_str = _format_ru_date(summary.get("active_until"))
@@ -415,6 +413,8 @@ async def premium_cmd(message: Message | CallbackQuery, state: FSMContext, is_ed
         if auto_renew:
             renewal_info = f"💳 Следующее списание: {active_until_str} ({price}₽)"
         else:
+            # Если автопродление выключено, добавляем статус "Отменена" и показываем до какого числа действует
+            plan_name += " (Отменена)"
             renewal_info = f"⏳ Действует до: {active_until_str}"
         
         caption = ui.TEXT_PREMIUM_ACTIVE_TEMPLATE.format(
@@ -448,6 +448,19 @@ async def help_cmd(message: Message | CallbackQuery, state: FSMContext) -> None:
     else:
         await message.answer(text, reply_markup=kb, disable_web_page_preview=True)
 
+
+@router.message(Command("help"))
+@router.callback_query(F.data == "help:show")
+async def help_cmd(message: Message | CallbackQuery, state: FSMContext) -> None:
+    text = ui.TEXT_HELP_RU
+    kb = ui.kb_help("ru")
+    
+    if isinstance(message, CallbackQuery):
+        await message.message.answer(text, reply_markup=kb, disable_web_page_preview=True)
+        await message.answer()
+    else:
+        await message.answer(text, reply_markup=kb, disable_web_page_preview=True)
+
 @router.callback_query(F.data == ui.CB_LANG_TOGGLE)
 async def help_lang_toggle(call: CallbackQuery, state: FSMContext) -> None:
     current_text = call.message.text or call.message.caption or ""
@@ -468,6 +481,24 @@ async def cancel_sub(call: CallbackQuery, state: FSMContext):
     res = await api_client.cancel_plan(call.from_user.id)
     if res.get("ok"): await call.answer("Автопродление отключено.", show_alert=True); await premium_cmd(call, state, is_edit=True)
     else: await call.answer("Ошибка отмены.", show_alert=True)
+
+@router.callback_query(F.data == ui.CB_RESUME_SUB)
+async def resume_sub(call: CallbackQuery, state: FSMContext):
+    """
+    Возобновление подписки (включение автопродления).
+    """
+    try:
+        res = await api_client.resume_plan(call.from_user.id) 
+        
+        if res.get("ok"):
+            await call.answer("Автопродление возобновлено! ✅", show_alert=True)
+            # Обновляем сообщение (кнопка сменится на "Отменить")
+            await premium_cmd(call, state, is_edit=True)
+        else:
+            await call.answer(f"Ошибка: {res.get('detail', 'Сбой')}", show_alert=True)
+    except Exception as e:
+        print(f"Resume Error: {e}")
+        await call.answer("Не удалось возобновить подписку.", show_alert=True)
 
 # -------------------- TIER SELECTION --------------------
 

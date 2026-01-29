@@ -113,7 +113,7 @@ class OpenAIProvider:
         # PRIMARY (она же PRO) -> gemini-3-pro-image-preview
         primary_model = os.getenv("NANOBANANA_MODEL_IMAGE") or getattr(settings, "NANOBANANA_MODEL_IMAGE", "gemini-3-pro-image-preview")
         # FALLBACK (она же STANDARD) -> gemini-2.0-flash-exp
-        fallback_model = os.getenv("NANOBANANA_MODEL_IMAGE_FALLBACK") or getattr(settings, "NANOBANANA_MODEL_IMAGE_FALLBACK", "gemini-2.0-flash-exp")
+        fallback_model = os.getenv("NANOBANANA_MODEL_IMAGE_FALLBACK") or getattr(settings, "NANOBANANA_MODEL_IMAGE_FALLBACK", "gemini-2.5-flash-image")
         
         models_to_try = []
 

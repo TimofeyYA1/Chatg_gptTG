@@ -77,6 +77,7 @@ CB_PAY_WEEK = "premium:buy:week"
 CB_PAY_MONTH = "premium:buy:month"
 CB_PAY_YEAR = "premium:buy:year"
 CB_CANCEL_SUB = "premium:cancel"
+CB_RESUME_SUB = "premium:resume" # <--- НОВАЯ КНОПКА
 
 # Keys for packages (Initial click)
 CB_PKG_150 = "pkg:150"
@@ -447,12 +448,12 @@ def kb_premium_paywall(lang: str = "ru", tier: str = "std") -> InlineKeyboardMar
     if tier == "pro":
         # Pro Цены
         p_week = "799₽"
-        p_month = "2399₽"
+        p_month = "2₽"
         p_year = "11999₽"
     else:
         # Standard Цены
         p_week = "399₽"
-        p_month = "1199₽"
+        p_month = "1₽"
         p_year = "5999₽"
 
     # Суффикс для колбэка, чтобы хендлер знал, какой тариф выбран
@@ -475,16 +476,20 @@ def kb_premium_paywall(lang: str = "ru", tier: str = "std") -> InlineKeyboardMar
         ]
     )
 
+
 def kb_premium_active(user_id: int, bot_name: str = "BeautyAIMasterBotbot", auto_renew: bool = True, show_edit_btn: bool = False) -> InlineKeyboardMarkup:
     """Кнопки под активной подпиской."""
     ref_link = f"https://t.me/{bot_name}?start={user_id}"
     rows = []
     
-    # ИЗМЕНЕННЫЕ КНОПКИ
     rows.append([InlineKeyboardButton(text="• 💌 Отправить друзьям", url=f"https://t.me/share/url?url={ref_link}")])
     
     if auto_renew:
+        # Если включено автопродление - кнопка ОТМЕНИТЬ
         rows.append([InlineKeyboardButton(text="• ✖️ Отменить подписку", callback_data=CB_CANCEL_SUB)])
+    else:
+        # Если выключено (отменена) - кнопка ВОЗОБНОВИТЬ
+        rows.append([InlineKeyboardButton(text="• ▶️ Возобновить подписку", callback_data=CB_RESUME_SUB)])
         
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

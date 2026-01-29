@@ -20,12 +20,12 @@ router = APIRouter(tags=["subscriptions"])
 PLANS = {
     # --- STANDARD ---
     "Week_Std":  {"price_cents": 399_00,  "rub_price": 399,  "limits": {"messages": 0, "images": 150,  "video": 0}, "duration": {"days": 7}},
-    "Month_Std": {"price_cents": 1199_00, "rub_price": 1199, "limits": {"messages": 0, "images": 300,  "video": 0}, "duration": {"months": 1}},
+    "Month_Std": {"price_cents": 1_00, "rub_price": 1199, "limits": {"messages": 0, "images": 300,  "video": 0}, "duration": {"months": 1}},
     "Year_Std":  {"price_cents": 5999_00, "rub_price": 5999, "limits": {"messages": 0, "images": 7200, "video": 0}, "duration": {"years": 1}},
 
     # --- PRO ---
     "Week_Pro":  {"price_cents": 799_00,  "rub_price": 799,  "limits": {"messages": 0, "images": 150,  "video": 0}, "duration": {"days": 7}},
-    "Month_Pro": {"price_cents": 2399_00, "rub_price": 2399, "limits": {"messages": 0, "images": 300,  "video": 0}, "duration": {"months": 1}},
+    "Month_Pro": {"price_cents": 2_00, "rub_price": 2, "limits": {"messages": 0, "images": 300,  "video": 0}, "duration": {"months": 1}},
     "Year_Pro":  {"price_cents": 11999_00, "rub_price": 11999, "limits": {"messages": 0, "images": 7200, "video": 0}, "duration": {"years": 1}},
 }
 
@@ -190,6 +190,25 @@ async def cancel(payload: dict, db: Session = Depends(get_db)):
 
     # 2. Обновляем локально
     sub.cancel_at_period_end = True
+    db.commit()
+    
+    return {"ok": True}
+
+
+@router.post("/resume")
+async def resume(payload: dict, db: Session = Depends(get_db)):
+    try: chat_id = int(payload["chat_id"])
+    except: raise HTTPException(400, "invalid payload")
+    
+    user = _get_or_create_user(db, chat_id)
+    sub = _get_sub(db, user.id)
+    
+    if not sub:
+        # Если подписки нет вообще
+        return {"ok": False, "detail": "Subscription not found"}
+    
+    # Снимаем флаг отмены в базе данных
+    sub.cancel_at_period_end = False
     db.commit()
     
     return {"ok": True}

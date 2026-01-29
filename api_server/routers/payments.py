@@ -5,6 +5,7 @@ from sqlalchemy import select
 from datetime import datetime, timedelta, timezone
 from dateutil.relativedelta import relativedelta
 
+# Импортируем Bot для отправки уведомлений
 from aiogram import Bot
 
 from db_adapter.database import get_db
@@ -37,62 +38,48 @@ def _get_or_create_credits(db: Session, user_id: int) -> PremiumCredits:
     return c
 
 
-def _cp_ok() -> Response:
-    # CloudPayments ожидает {"code":0} как "успешно обработано"
-    return Response(content='{"code":0}', media_type="application/json")
-
-
-def _cp_fail(status_code: int = 400, msg: str = "bad request") -> Response:
-    # При ошибках НЕ отдаём {"code":0}, чтобы CloudPayments видел проблему и ретраил.
-    # code:13 — условный код ошибки (CP важнее HTTP status).
-    safe_msg = (msg or "bad request").replace('"', "'")
-    return Response(
-        content=f'{{"code":13,"message":"{safe_msg}"}}',
-        status_code=status_code,
-        media_type="application/json",
-    )
-
-
 # --- КОНФИГУРАЦИЯ ТАРИФОВ ---
 PLANS_CONFIG = {
     # STANDARD
-    "Week_Std": {"price": 399, "desc": "Обычная: Неделя", "rec_interval": "Week", "rec_period": 1},
-    "Month_Std": {"price": 1, "desc": "Обычная: Месяц", "rec_interval": "Month", "rec_period": 1},
-    "Year_Std": {"price": 5999, "desc": "Обычная: Год", "rec_interval": "Year", "rec_period": 1},
+    "Week_Std":  {"price": 399,   "desc": "Обычная: Неделя", "rec_interval": "Week",  "rec_period": 1},
+    "Month_Std": {"price": 1,  "desc": "Обычная: Месяц",  "rec_interval": "Month", "rec_period": 1},
+    "Year_Std":  {"price": 5999,  "desc": "Обычная: Год",    "rec_interval": "Year",  "rec_period": 1},
+
     # PRO
-    "Week_Pro": {"price": 799, "desc": "Pro: Неделя", "rec_interval": "Week", "rec_period": 1},
-    "Month_Pro": {"price": 2, "desc": "Pro: Месяц", "rec_interval": "Month", "rec_period": 1},
-    "Year_Pro": {"price": 11999, "desc": "Pro: Год", "rec_interval": "Year", "rec_period": 1},
+    "Week_Pro":  {"price": 799,   "desc": "Pro: Неделя", "rec_interval": "Week",  "rec_period": 1},
+    "Month_Pro": {"price": 2,  "desc": "Pro: Месяц",  "rec_interval": "Month", "rec_period": 1},
+    "Year_Pro":  {"price": 11999, "desc": "Pro: Год",    "rec_interval": "Year",  "rec_period": 1},
 }
 
-# Обратная совместимость для старых ссылок
-PLANS_CONFIG.update(
-    {
-        "Week": PLANS_CONFIG["Week_Std"],
-        "Month": PLANS_CONFIG["Month_Std"],
-        "Year": PLANS_CONFIG["Year_Std"],
-    }
-)
+# Обратная совместимость для старых ссылок (если есть)
+PLANS_CONFIG.update({
+    "Week": PLANS_CONFIG["Week_Std"],
+    "Month": PLANS_CONFIG["Month_Std"],
+    "Year": PLANS_CONFIG["Year_Std"],
+})
 
 PACKAGES_CONFIG = {
-    "150": {"price": 349, "desc": "Пакет 150 генераций"},
+    "150":  {"price": 349,  "desc": "Пакет 150 генераций"},
     "1000": {"price": 1999, "desc": "Пакет 1000 генераций"},
     "5000": {"price": 5999, "desc": "Пакет 5000 генераций"},
 }
 
 
-# --- ПОМОЩНИК ОТПРАВКИ СООБЩЕНИЙ (ТЕКСТЫ СТРОГО КАК В ИСХОДНИКЕ) ---
+# --- ПОМОЩНИК ОТПРАВКИ СООБЩЕНИЙ ---
 async def send_success_notification(chat_id: int, plan_key: str, message_id: int = 0):
     """
     1. Изменяет старое сообщение на "Максимальный доступ включен".
     2. Отправляет НОВОЕ сообщение с призывом отправить фото.
     """
     try:
+        # Данные для текста
         plan_conf = PLANS_CONFIG.get(plan_key, {})
         price = plan_conf.get("price", "---")
 
+        # Расчет даты следующего списания для текста
         now = datetime.now(timezone.utc)
 
+        # Определяем название плана для пользователя
         is_pro = "Pro" in plan_key
         tier_name = "Pro" if is_pro else "Обычная"
 
@@ -112,6 +99,7 @@ async def send_success_notification(chat_id: int, plan_key: str, message_id: int
         plan_name = f"Премиум {tier_name}, {period_str} ({limit_str} генераций)"
         next_date_str = next_date_dt.strftime("%d.%m.%Y, %H:%M MSK")
 
+        # Текст 1: Поздравление
         text_congrats = (
             "✅ <b>Максимальный доступ включён!</b>\n\n"
             f"✨ Генераций осталось: {limit_str}\n"
@@ -120,6 +108,7 @@ async def send_success_notification(chat_id: int, plan_key: str, message_id: int
             "💡 Хочешь ещё больше крутых образов? Посмотри /packages и пополняй генерации!"
         )
 
+        # Текст 2: Инструкция (приходит следом)
         text_start = (
             "🏁 <b>Начинаем творить!</b>\n\n"
             "✨ <b>FaceLab</b> — меняй образ за секунды!\n"
@@ -128,8 +117,10 @@ async def send_success_notification(chat_id: int, plan_key: str, message_id: int
         )
 
         async with Bot(token=settings.TELEGRAM_BOT_TOKEN) as bot:
+            # ШАГ 1: Редактируем сообщение с оплатой
             if message_id and message_id > 0:
                 try:
+                    # reply_markup=None удаляет кнопку "Оплатить"
                     await bot.edit_message_caption(
                         chat_id=chat_id,
                         message_id=message_id,
@@ -139,10 +130,12 @@ async def send_success_notification(chat_id: int, plan_key: str, message_id: int
                     )
                 except Exception as edit_err:
                     logger.warning(f"Could not edit msg {message_id}: {edit_err}. Sending as new.")
+                    # Если сообщение удалили, шлем поздравление новым сообщением
                     await bot.send_message(chat_id=chat_id, text=text_congrats, parse_mode="HTML")
             else:
                 await bot.send_message(chat_id=chat_id, text=text_congrats, parse_mode="HTML")
 
+            # ШАГ 2: Отправляем призыв к действию (Start)
             await bot.send_message(chat_id=chat_id, text=text_start, parse_mode="HTML")
 
     except Exception as e:
@@ -150,7 +143,7 @@ async def send_success_notification(chat_id: int, plan_key: str, message_id: int
 
 
 # -------------------------------------------------------------------------
-# 1) СТРАНИЦА ОПЛАТЫ
+# 1. СТРАНИЦА ОПЛАТЫ
 # -------------------------------------------------------------------------
 @router.get("/checkout", response_class=HTMLResponse)
 def checkout_page(chat_id: int, type: str, value: str, message_id: int = 0):
@@ -159,7 +152,6 @@ def checkout_page(chat_id: int, type: str, value: str, message_id: int = 0):
     price = 0
     description = ""
     is_subscription = False
-    conf = None
 
     if type == "plan":
         conf = PLANS_CONFIG.get(value)
@@ -176,7 +168,6 @@ def checkout_page(chat_id: int, type: str, value: str, message_id: int = 0):
         price = conf["price"]
         description = conf["desc"]
         is_subscription = False
-
     else:
         return HTMLResponse("Неверный тип оплаты", 400)
 
@@ -256,114 +247,141 @@ def checkout_page(chat_id: int, type: str, value: str, message_id: int = 0):
 
 
 # -------------------------------------------------------------------------
-# 2) WEBHOOK
+# 2. WEBHOOK
 # -------------------------------------------------------------------------
 @router.post("/webhook")
 async def cloudpayments_webhook(request: Request, db: Session = Depends(get_db)):
-    # 1) Подпись (обязательно!)
+    # 1) Проверка подписи (БЕЗОПАСНОСТЬ)
     body = await request.body()
+    signature = request.headers.get("Content-HMAC", "")
 
-    # В разных конфигурациях встречается Content-HMAC / X-Content-HMAC
-    signature = request.headers.get("Content-HMAC") or request.headers.get("X-Content-HMAC") or ""
-
-    logger.info(
-        f"📩 CP webhook hit: ip={request.client.host if request.client else '-'} "
-        f"len={len(body)} hmac={'present' if bool(signature) else 'missing'} "
-        f"ct={request.headers.get('content-type','-')}"
-    )
-
+    # Важно: если подпись отсутствует/неверная — НЕ говорим CloudPayments "ok"
+    # и не даём злоумышленнику активировать подписку простым POST-ом.
     if not signature:
-        logger.warning("❌ CP webhook: missing HMAC header")
-        return _cp_fail(403, "missing signature")
+        logger.warning("❌ CP webhook: missing Content-HMAC")
+        return Response(content='{"code":13,"message":"missing signature"}', status_code=403, media_type="application/json")
 
     if not cp_service.check_signature(body, signature):
         logger.warning("❌ CP webhook: invalid signature")
-        return _cp_fail(403, "invalid signature")
+        return Response(content='{"code":13,"message":"invalid signature"}', status_code=403, media_type="application/json")
 
-    # 2) Парсим payload (обычно form-urlencoded)
-    ct = (request.headers.get("content-type") or "").lower()
-    data = None
-    try:
-        if "application/json" in ct:
-            data = await request.json()
-        else:
-            data = await request.form()
-    except Exception as e:
-        logger.error(f"❌ CP webhook: cannot parse body: {e}")
-        return _cp_fail(400, "cannot parse body")
+    form = await request.form()
 
-    def _get(k: str, default=None):
-        # form -> MultiDict, json -> dict
-        try:
-            return data.get(k, default)
-        except Exception:
-            return default
-
-    # 3) Проверка статуса
-    status = _get("Status")
+    # 2) ПРОВЕРКА СТАТУСА ПЛАТЕЖА
+    status = form.get("Status")
     if status not in ["Completed", "Authorized"]:
-        logger.info(f"🚫 CP Webhook: Payment Status='{status}' (not success). Ignoring.")
-        return _cp_ok()
+        logger.info(f"🚫 CP Webhook: Payment Status is '{status}' (not success). Ignoring.")
+        return Response(content='{"code":0}', media_type="application/json")
 
-    # 4) Данные
-    chat_id_str = _get("AccountId")
-    invoice_id = _get("InvoiceId", "") or ""
-    cp_sub_id = _get("SubscriptionId")
-
-    amount_raw = _get("Amount", "0")
-    try:
-        amount = float(amount_raw)
-    except Exception:
-        amount = 0.0
+    # 3) Извлечение данных
+    chat_id_str = form.get("AccountId")
+    amount = float(form.get("Amount", 0))
+    cp_sub_id = form.get("SubscriptionId")
+    invoice_id = form.get("InvoiceId", "")
 
     pay_type = ""
     pay_value = ""
     message_id = 0
 
-    # InvoiceId:
-    # plan_Week_Std_<chatId>_<messageId>_<ts>
-    # pkg_150_<chatId>_<messageId>_<ts>
-    parts = invoice_id.split("_") if invoice_id else []
+    # Парсинг InvoiceId: plan_Week_Std_12345_1111_ts
+    parts = invoice_id.split("_")
     if len(parts) >= 3:
         pay_type = parts[0]
-
-        if pay_type == "plan":
-            # plan_Week_Std_123_456_789
-            if len(parts) >= 5 and (("Std" in parts[2]) or ("Pro" in parts[2])):
-                pay_value = f"{parts[1]}_{parts[2]}"
-                if not chat_id_str and len(parts) >= 4:
-                    chat_id_str = parts[3]
-                if len(parts) >= 5:
-                    try:
-                        message_id = int(parts[4])
-                    except Exception:
-                        message_id = 0
-            else:
-                # план без _Std/_Pro (старые ссылки)
-                pay_value = parts[1]
-                if not chat_id_str and len(parts) >= 3:
-                    chat_id_str = parts[2]
-                if len(parts) >= 4:
-                    try:
-                        message_id = int(parts[3])
-                    except Exception:
-                        message_id = 0
-
-        elif pay_type == "pkg":
-            pay_value = parts[1] if len(parts) >= 2 else ""
-            if not chat_id_str and len(parts) >= 3:
+        # Если в parts[2] есть Std или Pro, значит value было с подчеркиванием
+        if pay_type == "plan" and len(parts) > 2 and ("Std" in parts[2] or "Pro" in parts[2]):
+            pay_value = parts[1] + "_" + parts[2]
+            if not chat_id_str:
+                chat_id_str = parts[3]
+            if len(parts) >= 6:
+                try:
+                    message_id = int(parts[4])
+                except:
+                    message_id = 0
+        else:
+            # Старая логика или пакеты (pkg_150_...)
+            pay_value = parts[1]
+            if not chat_id_str:
                 chat_id_str = parts[2]
-            if len(parts) >= 4:
+            if len(parts) >= 5:
                 try:
                     message_id = int(parts[3])
-                except Exception:
+                except:
                     message_id = 0
 
     if not chat_id_str or not pay_type:
-        logger.warning(f"❌ CP webhook: missing required fields. AccountId={chat_id_str}, pay_type={pay_type}")
-        return _cp_fail(400, "missing required fields")
+        return Response(content='{"code":0}', media_type="application/json")
 
     try:
         chat_id = int(chat_id_str)
-    except Exception:
-        logger.wa
+    except:
+        return Response(content='{"code":0}', media_type="application/json")
+
+    logger.info(f"💰 CP Webhook SUCCESS: User={chat_id}, Type={pay_type}, Val={pay_value}, Status={status}")
+
+    # 4) Взаимодействие с БД
+    user = _get_user(db, chat_id)
+    if not user:
+        user = User(chat_id=chat_id, role="free")
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    # --- ЛОГИКА НАЧИСЛЕНИЯ ПОДПИСКИ ---
+    if pay_type == "plan":
+        conf = PLANS_CONFIG.get(pay_value)
+        if conf:
+            start = _now()
+            sub = db.execute(select(Subscription).where(Subscription.user_id == user.id)).scalar_one_or_none()
+
+            if sub and sub.current_period_end and sub.current_period_end > start:
+                start = sub.current_period_end
+
+            if "Week" in conf["rec_interval"]:
+                end = start + timedelta(days=7)
+            elif "Month" in conf["rec_interval"]:
+                end = start + relativedelta(months=1)
+            else:
+                end = start + relativedelta(years=1)
+
+            if not sub:
+                sub = Subscription(user_id=user.id)
+                db.add(sub)
+
+            sub.plan = pay_value
+            sub.status = "active"
+            sub.current_period_end = end
+            sub.cancel_at_period_end = False
+
+            if cp_sub_id:
+                sub.cp_sub_id = cp_sub_id
+
+            credits = _get_or_create_credits(db, user.id)
+            # Лимиты берем из названий, т.к. конфиг тут только для платежей
+            if "Week" in pay_value:
+                credits.img_limit_base = 150
+            elif "Month" in pay_value:
+                credits.img_limit_base = 600
+            elif "Year" in pay_value:
+                credits.img_limit_base = 7200
+
+            db.commit()
+            logger.info(f"✅ Subscription saved to DB for {chat_id}")
+
+            # 5) Уведомления в ТГ (Поздравление + Старт)
+            await send_success_notification(chat_id, pay_value, message_id)
+
+    # --- ЛОГИКА ДЛЯ ПАКЕТОВ ---
+    elif pay_type == "pkg":
+        qty = 0
+        try:
+            qty = int(pay_value)
+        except:
+            pass
+
+        if qty > 0:
+            credits = _get_or_create_credits(db, user.id)
+            credits.image_credits = (credits.image_credits or 0) + qty
+            db.commit()
+            logger.info(f"✅ Package credits saved to DB for {chat_id}")
+
+    return Response(content='{"code":0}', media_type="application/json")

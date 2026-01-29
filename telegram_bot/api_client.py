@@ -86,7 +86,23 @@ async def balance_topup(chat_id: int, amount_cents: int) -> Dict[str, Any]:
     except Exception:
         return {"ok": True}
 
+# telegram_bot/api_client.py
 
+
+async def resume_plan(user_id: int) -> dict:
+    """Возобновляет автопродление подписки"""
+    # Адрес API внутри Docker-сети
+    api_url = "http://api:8000" 
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.post(f"{API_BASE}/subscriptions/resume", json={"chat_id": user_id})
+            if resp.status_code == 200:
+                return resp.json()
+            return {"ok": False, "detail": f"Server error: {resp.status_code}"}
+        except Exception as e:
+            return {"ok": False, "detail": str(e)}
+        
 async def buy_addon(chat_id: int, qty: int, price_cents: int) -> Dict[str, Any]:
     await balance_topup(chat_id, price_cents)
     
