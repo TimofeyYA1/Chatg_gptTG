@@ -610,7 +610,7 @@ async def on_pay_choice_rub(call: CallbackQuery, state: FSMContext):
         elif "Month" in plan_key:
             next_date = now + timedelta(days=30)
             period_str = "месяц"
-            count_str = "300"
+            count_str = "600"
         elif "Year" in plan_key:
             next_date = now + timedelta(days=365)
             period_str = "год"
@@ -1090,7 +1090,7 @@ async def _process_generation(message: Message, state: FSMContext, prompt: str =
                         await message.answer_photo(input_file, caption=final_caption, reply_markup=ui.kb_result_actions("ru"))
                 
                 await state.update_data(last_result_b64=res_b64)
-                doc_file = BufferedInputFile(file_bytes, filename="mylook_result.jpg")
+                doc_file = BufferedInputFile(file_bytes, filename="facelab_result.jpg")
                 await message.answer_document(doc_file)
 
             else:
@@ -1140,7 +1140,7 @@ async def on_save_file(call: CallbackQuery, state: FSMContext):
     await call.answer("Отправляю...")
     try:
         file_bytes = base64.b64decode(b64_data)
-        await call.message.answer_document(BufferedInputFile(file_bytes, filename="mylook_result.jpg"), caption="Вот ваш файл 💾")
+        await call.message.answer_document(BufferedInputFile(file_bytes, filename="facelab_result.jpg"), caption="Вот ваш файл 💾")
     except Exception: await call.answer("Ошибка отправки", show_alert=True)
 
 @router.callback_query(F.data == ui.CB_GEN_SAME_PHOTO)

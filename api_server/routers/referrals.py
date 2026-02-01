@@ -46,7 +46,7 @@
 #     - subscribed  — сколько из них дали «премиальный» бонус (оформили плату и т.п.)
 #     """
 #     user = _get_user(db, chat_id)
-#     link = f"https://t.me/{getattr(settings, 'BOT_NAME', 'ai_superbot')}?start={chat_id}"
+#     link = f"https://t.me/{getattr(settings, 'BOT_NAME', 'FacelabXbot')}?start={chat_id}"
 
 #     if not user:
 #         return {"invited": 0, "subscribed": 0, "ref_link": link}

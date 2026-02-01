@@ -25,7 +25,7 @@ class Settings(BaseSettings):
 
     # --- Telegram ---
     TELEGRAM_BOT_TOKEN: str = Field("", validation_alias=AliasChoices("TELEGRAM_BOT_TOKEN", "telegram_bot_token"))
-    BOT_NAME: str = Field("ai_superbot", validation_alias=AliasChoices("BOT_NAME", "bot_name"))
+    BOT_NAME: str = Field("FacelabXbot", validation_alias=AliasChoices("BOT_NAME", "bot_name"))
 
     # --- CloudPayments ---
     CLOUDPAYMENTS_PUBLIC_ID: str = Field("", validation_alias=AliasChoices("CLOUDPAYMENTS_PUBLIC_ID", "cloudpayments_public_id"))

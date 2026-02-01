@@ -135,7 +135,7 @@ TEXTS = {
         "photo_ok": "Фото принято ✅ Теперь выбирай режим:",
         "gen_wait": "⏳ <b>Обрабатываем ваше фото...</b>",
         "new_photo_req": "📸 Пожалуйста, пришлите новую фотографию.",
-        "result_caption": "От 🌟 @BeautyAIMasterBot",
+        "result_caption": "От 🌟 @FacelabXbot",
     },
 }
 
@@ -206,9 +206,8 @@ TEXT_PACKAGES_CAPTION = (
 TEXT_PAYMENT_CONFIRMATION_RUB = (
     "Вы приобретаете пакет: <b>Премиум {tier_name} на {period} ({count} генераций) - {price}₽</b>\n"
     "Следующее списание: {next_date} - {price}₽\n\n"
-    "Нажимая «Оплатить», вы соглашаетесь с <a href='{link_recurring}'>Правилами приема рекуррентных платежей</a>. "
-    "Вы сможете отменить подписку в любой момент.\n\n"
-    "🔒 Мы используем надежный платежный сервис Avanpay. Мы не храним ваши платежные данные."
+    "Нажимая «Оплатить», вы соглашаетесь с <a href='{link_recurring}'>Правилами приема рекуррентных платежей</a>. Подписку можно отменить в любой момент.\n\n"
+    "🔒 Платёж безопасен и защищён сервисом CloudPayments."
 )
 # ---------- KEYBOARDS ----------
 
@@ -477,7 +476,7 @@ def kb_premium_paywall(lang: str = "ru", tier: str = "std") -> InlineKeyboardMar
     )
 
 
-def kb_premium_active(user_id: int, bot_name: str = "BeautyAIMasterBotbot", auto_renew: bool = True, show_edit_btn: bool = False) -> InlineKeyboardMarkup:
+def kb_premium_active(user_id: int, bot_name: str = "FacelabXbot", auto_renew: bool = True, show_edit_btn: bool = False) -> InlineKeyboardMarkup:
     """Кнопки под активной подпиской."""
     ref_link = f"https://t.me/{bot_name}?start={user_id}"
     rows = []
