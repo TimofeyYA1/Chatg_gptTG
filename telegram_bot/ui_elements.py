@@ -447,12 +447,12 @@ def kb_premium_paywall(lang: str = "ru", tier: str = "std") -> InlineKeyboardMar
     if tier == "pro":
         # Pro Цены
         p_week = "799₽"
-        p_month = "2₽"
+        p_month = "1599₽"
         p_year = "11999₽"
     else:
         # Standard Цены
         p_week = "399₽"
-        p_month = "1₽"
+        p_month = "799₽"
         p_year = "5999₽"
 
     # Суффикс для колбэка, чтобы хендлер знал, какой тариф выбран

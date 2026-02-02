@@ -42,12 +42,12 @@ def _get_or_create_credits(db: Session, user_id: int) -> PremiumCredits:
 PLANS_CONFIG = {
     # STANDARD
     "Week_Std":  {"price": 399,   "desc": "Обычная: Неделя", "rec_interval": "Week",  "rec_period": 1},
-    "Month_Std": {"price": 1,  "desc": "Обычная: Месяц",  "rec_interval": "Month", "rec_period": 1},
+    "Month_Std": {"price": 799,  "desc": "Обычная: Месяц",  "rec_interval": "Month", "rec_period": 1},
     "Year_Std":  {"price": 5999,  "desc": "Обычная: Год",    "rec_interval": "Year",  "rec_period": 1},
 
     # PRO
     "Week_Pro":  {"price": 799,   "desc": "Pro: Неделя", "rec_interval": "Week",  "rec_period": 1},
-    "Month_Pro": {"price": 2,  "desc": "Pro: Месяц",  "rec_interval": "Month", "rec_period": 1},
+    "Month_Pro": {"price": 1599,  "desc": "Pro: Месяц",  "rec_interval": "Month", "rec_period": 1},
     "Year_Pro":  {"price": 11999, "desc": "Pro: Год",    "rec_interval": "Year",  "rec_period": 1},
 }
 
@@ -90,7 +90,7 @@ async def send_success_notification(chat_id: int, plan_key: str, message_id: int
         elif "Month" in plan_key:
             next_date_dt = now + relativedelta(months=1)
             period_str = "месяц"
-            limit_str = "600"
+            limit_str = "300"
         else:  # Year
             next_date_dt = now + relativedelta(years=1)
             period_str = "год"
@@ -360,7 +360,7 @@ async def cloudpayments_webhook(request: Request, db: Session = Depends(get_db))
             if "Week" in pay_value:
                 credits.img_limit_base = 150
             elif "Month" in pay_value:
-                credits.img_limit_base = 600
+                credits.img_limit_base = 300
             elif "Year" in pay_value:
                 credits.img_limit_base = 7200
 

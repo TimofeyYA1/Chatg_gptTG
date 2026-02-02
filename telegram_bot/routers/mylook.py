@@ -43,7 +43,7 @@ PLAN_TRANSLATE = {
 }
 PLAN_PRICES = {
     "Week_Std": "399",  "Week_Pro": "799",
-    "Month_Std": "1", "Month_Pro": "2",
+    "Month_Std": "799", "Month_Pro": "1599",
     "Year_Std": "5999",  "Year_Pro": "11999",
 }
 
@@ -610,7 +610,7 @@ async def on_pay_choice_rub(call: CallbackQuery, state: FSMContext):
         elif "Month" in plan_key:
             next_date = now + timedelta(days=30)
             period_str = "месяц"
-            count_str = "600"
+            count_str = "300"
         elif "Year" in plan_key:
             next_date = now + timedelta(days=365)
             period_str = "год"
