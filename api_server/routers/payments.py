@@ -42,12 +42,12 @@ def _get_or_create_credits(db: Session, user_id: int) -> PremiumCredits:
 PLANS_CONFIG = {
     # STANDARD
     "Week_Std":  {"price": 399,   "desc": "Обычная: Неделя", "rec_interval": "Week",  "rec_period": 1},
-    "Month_Std": {"price": 799,  "desc": "Обычная: Месяц",  "rec_interval": "Month", "rec_period": 1},
+    "Month_Std": {"price": 799,  "desc": "Обычная версия месяц",  "rec_interval": "Month", "rec_period": 1},
     "Year_Std":  {"price": 5999,  "desc": "Обычная: Год",    "rec_interval": "Year",  "rec_period": 1},
 
     # PRO
     "Week_Pro":  {"price": 799,   "desc": "Pro: Неделя", "rec_interval": "Week",  "rec_period": 1},
-    "Month_Pro": {"price": 1599,  "desc": "Pro: Месяц",  "rec_interval": "Month", "rec_period": 1},
+    "Month_Pro": {"price": 1599,  "desc": "Pro версия месяц",  "rec_interval": "Month", "rec_period": 1},
     "Year_Pro":  {"price": 11999, "desc": "Pro: Год",    "rec_interval": "Year",  "rec_period": 1},
 }
 
