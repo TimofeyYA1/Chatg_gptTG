@@ -390,6 +390,8 @@ async def cmd_export_stats(message: Message):
     except Exception as e:
         await status_msg.edit_text(f"❌ Ошибка: {e}")
 
+
+
 @router.message(F.photo, F.caption)
 async def handle_photo_with_prompt(message: Message, state: FSMContext):
     if not await has_generations_async(message.chat.id):
