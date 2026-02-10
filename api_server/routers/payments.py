@@ -73,49 +73,49 @@ async def send_success_notification(chat_id: int, plan_key: str, message_id: int
     """
     try:
         async with Bot(token=settings.TELEGRAM_BOT_TOKEN) as bot:
-            # Данные для текста
-            plan_conf = PLANS_CONFIG.get(plan_key, {})
-            price = plan_conf.get("price", "---")
+        # Данные для текста
+        plan_conf = PLANS_CONFIG.get(plan_key, {})
+        price = plan_conf.get("price", "---")
 
-            # Расчет даты следующего списания для текста
-            now = datetime.now(timezone.utc)
+        # Расчет даты следующего списания для текста
+        now = datetime.now(timezone.utc)
 
-            # Определяем название плана для пользователя
-            is_pro = "Pro" in plan_key
-            tier_name = "Pro" if is_pro else "Обычная"
+        # Определяем название плана для пользователя
+        is_pro = "Pro" in plan_key
+        tier_name = "Pro" if is_pro else "Обычная"
 
-            if "Week" in plan_key:
-                next_date_dt = now + timedelta(days=7)
-                period_str = "7 дней"
-                limit_str = "150"
-            elif "Month" in plan_key:
-                next_date_dt = now + relativedelta(months=1)
-                period_str = "месяц"
-                limit_str = "300"
-            else:  # Year
-                next_date_dt = now + relativedelta(years=1)
-                period_str = "год"
-                limit_str = "7200"
+        if "Week" in plan_key:
+            next_date_dt = now + timedelta(days=7)
+            period_str = "7 дней"
+            limit_str = "150"
+        elif "Month" in plan_key:
+            next_date_dt = now + relativedelta(months=1)
+            period_str = "месяц"
+            limit_str = "300"
+        else:  # Year
+            next_date_dt = now + relativedelta(years=1)
+            period_str = "год"
+            limit_str = "7200"
 
-            plan_name = f"Премиум {tier_name}, {period_str} ({limit_str} генераций)"
-            next_date_str = next_date_dt.strftime("%d.%m.%Y, %H:%M MSK")
+        plan_name = f"Премиум {tier_name}, {period_str} ({limit_str} генераций)"
+        next_date_str = next_date_dt.strftime("%d.%m.%Y, %H:%M MSK")
 
-            # Текст 1: Поздравление
-            text_congrats = (
-                "✅ <b>Максимальный доступ включён!</b>\n\n"
-                f"✨ Генераций осталось: {limit_str}\n"
-                f"🌸 Текущая подписка: {plan_name}\n"
-                f"💳 Следующее списание: {next_date_str} ({price}₽)\n\n"
-                "💡 Хочешь ещё больше крутых образов? Посмотри /packages и пополняй генерации!"
-            )
+        # Текст 1: Поздравление
+        text_congrats = (
+            "✅ <b>Максимальный доступ включён!</b>\n\n"
+            f"✨ Генераций осталось: {limit_str}\n"
+            f"🌸 Текущая подписка: {plan_name}\n"
+            f"💳 Следующее списание: {next_date_str} ({price}₽)\n\n"
+            "💡 Хочешь ещё больше крутых образов? Посмотри /packages и пополняй генерации!"
+        )
 
-            # Текст 2: Инструкция (приходит следом)
-            text_start = (
-                "🏁 <b>Начинаем творить!</b>\n\n"
-                "✨ <b>FaceLab</b> — меняй образ за секунды!\n"
-                "Примеряй стили и тренды за пару кликов.\n\n"
-                "📸 <b>Пожалуйста, отправьте фото, где хорошо видно лицо — и мы сразу создадим новый образ!</b>"
-            )
+        # Текст 2: Инструкция (приходит следом)
+        text_start = (
+            "🏁 <b>Начинаем творить!</b>\n\n"
+            "✨ <b>FaceLab</b> — меняй образ за секунды!\n"
+            "Примеряй стили и тренды за пару кликов.\n\n"
+            "📸 <b>Пожалуйста, отправьте фото, где хорошо видно лицо — и мы сразу создадим новый образ!</b>"
+        )
 
             # ШАГ 1: Редактируем сообщение с оплатой
             if message_id and message_id > 0:
