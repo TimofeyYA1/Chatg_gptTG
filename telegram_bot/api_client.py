@@ -159,6 +159,33 @@ async def set_plan(chat_id: int, plan: str | None = None, period: str | None = N
         return {"ok": True, "plan": plan_name}
 
 
+# --- Promo Tokens ---
+
+async def generate_promo(count: int, credits: int = 10) -> Dict[str, Any]:
+    async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+        r = await client.post(
+            f"{API_BASE}/promo/generate",
+            json={"count": count, "credits": credits}
+        )
+    if r.status_code != 200:
+        return {"ok": False, "error": r.text}
+    return r.json()
+
+
+async def use_promo(chat_id: int, token: str) -> Dict[str, Any]:
+    async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+        r = await client.post(
+            f"{API_BASE}/promo/use",
+            json={"chat_id": chat_id, "token": token}
+        )
+    if r.status_code != 200:
+        try:
+            return {"ok": False, "error": r.json().get("detail", "error"), "status": r.status_code}
+        except:
+            return {"ok": False, "error": r.text, "status": r.status_code}
+    return r.json()
+
+
 async def cancel_plan(chat_id: int) -> Dict[str, Any]:
     async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
         r = await client.post(f"{API_BASE}/subscriptions/cancel", json={"chat_id": chat_id})
@@ -206,6 +233,17 @@ async def generate_from_catalog(chat_id: int, image_b64: str, gender: str, edito
         return {"ok": False, "error": f"HTTP {r.status_code}", "detail": r.text}
     try: return r.json()
     except: return {"ok": False, "error": "invalid_json"}
+
+# --- Export ---
+
+async def export_stats(token: str) -> bytes | None:
+    timeout = httpx.Timeout(connect=5.0, read=60.0, write=60.0, pool=5.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.get(f"{API_BASE}/usage/export_users_stats", params={"token": token})
+    
+    if r.status_code == 200:
+        return r.content
+    return None
 
 # --- Catalog Info ---
 

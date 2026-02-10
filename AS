@@ -1,0 +1,367 @@
+import SwiftUI
+import PDFKit
+import GoogleGenerativeAI
+import Combine
+
+// MARK: - МОДЕЛЬ ДАННЫХ
+struct TranslatedPage: Identifiable, Codable, Comparable {
+    let id: Int
+    var translatedText: String
+    var status: PageStatus = .loading
+    
+    enum PageStatus: String, Codable {
+        case loading, success, error
+    }
+    
+    static func < (lhs: TranslatedPage, rhs: TranslatedPage) -> Bool { lhs.id < rhs.id }
+}
+
+// MARK: - ЛОГИКА (VIEWMODEL)
+@MainActor
+class BookViewModel: ObservableObject {
+    // === ВСТАВЬТЕ ВАШ КЛЮЧ ТУТ ===
+    private let apiKey = "ВАШ_API_KEY_GEMINI"
+    
+    @Published var translatedPages: [TranslatedPage] = []
+    @Published var progress: Double = 0
+    @Published var isTranslating = false
+    @Published var currentBookName: String = ""
+    @Published var errorCount: Int = 0
+    
+    private var model: GenerativeModel?
+    private var pdfDocument: PDFDocument?
+    private let saveFolder = "SavedTranslations"
+
+    init() {
+        self.model = GenerativeModel(name: "gemini-1.5-flash", apiKey: apiKey)
+        createDirectory()
+    }
+    
+    func loadBook(url: URL) {
+        guard url.startAccessingSecurityScopedResource() else { return }
+        defer { url.stopAccessingSecurityScopedResource() }
+        
+        guard let document = PDFDocument(url: url) else { return }
+        self.pdfDocument = document
+        self.currentBookName = url.lastPathComponent
+        
+        if !loadLocalData(for: currentBookName) {
+            self.translatedPages = []
+        }
+        
+        updateStats()
+        if translatedPages.count < document.pageCount || errorCount > 0 {
+            startTranslating()
+        }
+    }
+
+    func regenerateSinglePage(index: Int) {
+        guard let doc = pdfDocument, let pageText = doc.page(at: index)?.string else { return }
+        if let idx = translatedPages.firstIndex(where: { $0.id == index }) {
+            translatedPages[idx].status = .loading
+        }
+        Task {
+            let result = await processSinglePage(index: index, text: pageText)
+            if let page = result {
+                self.translatedPages.removeAll(where: { $0.id == index })
+                self.translatedPages.append(page)
+                self.translatedPages.sort()
+                saveLocalData(); updateStats()
+            }
+        }
+    }
+
+    func regenerateBook() {
+        isTranslating = false
+        let url = getURL(for: currentBookName)
+        try? FileManager.default.removeItem(at: url)
+        self.translatedPages = []
+        self.progress = 0; self.errorCount = 0
+        startTranslating()
+    }
+    
+    func startTranslating() {
+        guard let doc = pdfDocument, !isTranslating else { return }
+        isTranslating = true
+        
+        Task {
+            let total = doc.pageCount
+            for i in 0..<total {
+                if !isTranslating { break }
+                if let existing = translatedPages.first(where: { $0.id == i }), existing.status == .success { continue }
+                
+                guard let pageText = doc.page(at: i)?.string, !pageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    let imagePage = TranslatedPage(id: i, translatedText: "_[Изображение или пустая страница]_", status: .success)
+                    self.translatedPages.removeAll(where: { $0.id == i })
+                    self.translatedPages.append(imagePage)
+                    self.translatedPages.sort()
+                    saveLocalData(); updateStats()
+                    continue
+                }
+                
+                let result = await processSinglePage(index: i, text: pageText)
+                if let page = result {
+                    self.translatedPages.removeAll(where: { $0.id == i })
+                    self.translatedPages.append(page)
+                    self.translatedPages.sort()
+                    saveLocalData(); updateStats()
+                }
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+            }
+            isTranslating = false
+        }
+    }
+    
+    private func processSinglePage(index: Int, text: String) async -> TranslatedPage? {
+        var engContext = ""
+        var rusContext = ""
+        if index > 0 {
+            engContext = pdfDocument?.page(at: index-1)?.string?.suffix(400).description ?? ""
+            rusContext = translatedPages.first(where: { $0.id == index-1 })?.translatedText.suffix(400).description ?? ""
+        }
+        
+        let result = await translateWithAI(text: text, engContext: engContext, rusContext: rusContext, pageNum: index + 1)
+        if let translatedText = result {
+            return TranslatedPage(id: index, translatedText: cleanResponse(translatedText), status: .success)
+        }
+        return TranslatedPage(id: index, translatedText: "⚠️ Ошибка. Обновите вручную.", status: .error)
+    }
+    
+    private func translateWithAI(text: String, engContext: String, rusContext: String, pageNum: Int) async -> String? {
+        guard let model = model else { return nil }
+        
+        let prompt = """
+        ACT AS: Professional Psychology Translator. 
+        TASK: Translate text between [START] and [END] into Russian.
+        
+        CONTEXT FOR CONTINUITY:
+        - Previous English ended: "\(engContext)"
+        - Previous Russian ended: "\(rusContext)"
+        
+        STRICT RULES:
+        1. Term 'Self' = 'Самость'. 
+        2. SEAMLESS FLOW: Connect the translation to the previous Russian context perfectly. NO dots (...) at the start. NO repetitions.
+        3. NO TECHNICAL NOISE: Do NOT use <blockquote>, <div>, or any tags.
+        4. NO METADATA: Do NOT include "Page \(pageNum)".
+        5. FORMAT: Use '# ' for titles.
+        
+        [START]
+        \(text)
+        [END]
+        """
+        
+        do {
+            let response = try await model.generateContent(prompt)
+            return response.text
+        } catch { return nil }
+    }
+
+    private func cleanResponse(_ text: String) -> String {
+        var cleaned = text
+        let junk = ["STRICT RULES:", "TERMINOLOGY:", "[START]", "[END]", "<blockquote>", "</blockquote>", "»»»", "«««"]
+        for word in junk {
+            cleaned = cleaned.replacingOccurrences(of: word, with: "", options: [.caseInsensitive, .regularExpression])
+        }
+        let trimmed = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.hasPrefix("...") ? String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces) : trimmed
+    }
+    
+    private func updateStats() {
+        guard let doc = pdfDocument else { return }
+        let success = translatedPages.filter { $0.status == .success }.count
+        self.progress = Double(success) / Double(doc.pageCount)
+        self.errorCount = translatedPages.filter { $0.status == .error }.count
+    }
+    
+    private func saveLocalData() {
+        guard !currentBookName.isEmpty else { return }
+        if let data = try? JSONEncoder().encode(translatedPages) {
+            try? data.write(to: getURL(for: currentBookName))
+        }
+    }
+    
+    private func loadLocalData(for name: String) -> Bool {
+        let url = getURL(for: name)
+        if let data = try? Data(contentsOf: url),
+           let saved = try? JSONDecoder().decode([TranslatedPage].self, from: data) {
+            self.translatedPages = saved.sorted(); return true
+        }
+        return false
+    }
+    
+    private func getURL(for name: String) -> URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return docs.appendingPathComponent(saveFolder).appendingPathComponent(name + ".json")
+    }
+    
+    private func createDirectory() {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let folderURL = docs.appendingPathComponent(saveFolder)
+        try? FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+    }
+    
+    func exportPDF() -> URL? {
+        let pdfDoc = PDFDocument()
+        let rect = CGRect(x: 0, y: 0, width: 595, height: 842)
+        let format = UIGraphicsImageRendererFormat()
+        format.preferredRange = .standard
+        
+        let sorted = translatedPages.filter { $0.status == .success }.sorted()
+        for (i, page) in sorted.enumerated() {
+            let renderer = UIGraphicsImageRenderer(size: rect.size, format: format)
+            let img = renderer.image { ctx in
+                UIColor.white.setFill(); ctx.fill(rect)
+                var y: CGFloat = 60
+                let lines = page.translatedText.components(separatedBy: .newlines)
+                for line in lines {
+                    let isH = line.hasPrefix("#")
+                    let clean = line.replacingOccurrences(of: "#", with: "").trimmingCharacters(in: .whitespaces)
+                    if clean.isEmpty { y += 15; continue }
+                    let attr: [NSAttributedString.Key: Any] = [
+                        .font: isH ? UIFont.boldSystemFont(ofSize: 22) : UIFont.systemFont(ofSize: 14),
+                        .paragraphStyle: { let p = NSMutableParagraphStyle(); p.lineSpacing = 6; return p }()
+                    ]
+                    let str = NSAttributedString(string: clean, attributes: attr)
+                    let h = str.boundingRect(with: CGSize(width: 495, height: 10000), options: .usesLineFragmentOrigin, context: nil).height
+                    str.draw(in: CGRect(x: 50, y: y, width: 495, height: h))
+                    y += h + (isH ? 20 : 10)
+                    if y > 780 { break }
+                }
+            }
+            if let pdfPage = PDFPage(image: img) { pdfDoc.insert(pdfPage, at: i) }
+        }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Translated_Book.pdf")
+        return pdfDoc.write(to: url) ? url : nil
+    }
+}
+
+// MARK: - ИНТЕРФЕЙС
+struct ContentView: View {
+    @StateObject var vm = BookViewModel()
+    @State private var showFilePicker = false
+    @State private var showResetAlert = false
+    
+    // ПЕРЕМЕННАЯ ДЛЯ РАЗМЕРА ШРИФТА (сохраняется в памяти устройства)
+    @AppStorage("userFontSize") private var fontSize: Double = 16.0
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                // Панель прогресса
+                if !vm.currentBookName.isEmpty {
+                    VStack(spacing: 6) {
+                        ProgressView(value: vm.progress).tint(.blue)
+                        HStack {
+                            Text("\(Int(vm.progress * 100))% переведено").font(.caption2).bold()
+                            Spacer()
+                            Text("Размер: \(Int(fontSize))").font(.caption2).foregroundColor(.secondary)
+                        }
+                    }.padding().background(Color(.secondarySystemBackground))
+                }
+                
+                if vm.translatedPages.isEmpty && !vm.isTranslating {
+                    VStack(spacing: 20) {
+                        Image(systemName: "text.magnifyingglass").font(.system(size: 60)).foregroundColor(.blue.opacity(0.5))
+                        Button("Загрузить PDF") { showFilePicker = true }.buttonStyle(.borderedProminent)
+                    }.frame(maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 35) {
+                            ForEach(vm.translatedPages) { page in
+                                PageDetailView(page: page, fontSize: fontSize) {
+                                    vm.regenerateSinglePage(index: page.id)
+                                }
+                            }
+                        }.padding()
+                    }
+                }
+            }
+            .navigationTitle("AI Psychology Reader")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    HStack(spacing: 15) {
+                        if !vm.translatedPages.isEmpty {
+                            Menu {
+                                Section("Текст") {
+                                    Button(action: { fontSize += 2 }) {
+                                        Label("Увеличить", systemImage: "plus.circle")
+                                    }
+                                    Button(action: { if fontSize > 8 { fontSize -= 2 } }) {
+                                        Label("Уменьшить", systemImage: "minus.circle")
+                                    }
+                                }
+                                
+                                Section("Книга") {
+                                    ShareLink(item: vm.exportPDF() ?? URL(string: "about:blank")!) {
+                                        Label("Экспорт в PDF", systemImage: "square.and.arrow.up")
+                                    }
+                                    Button(role: .destructive) { showResetAlert = true } label: {
+                                        Label("Начать заново", systemImage: "arrow.clockwise")
+                                    }
+                                }
+                            } label: { Image(systemName: "ellipsis.circle") }
+                        }
+                        Button { showFilePicker = true } label: { Image(systemName: "plus") }
+                    }
+                }
+            }
+            // ГОРЯЧИЕ КЛАВИШИ (Ctrl+ / Ctrl-)
+            .background(
+                Group {
+                    Button("") { fontSize += 2 }.keyboardShortcut("+", modifiers: [.command])
+                    Button("") { fontSize += 2 }.keyboardShortcut("=", modifiers: [.command])
+                    Button("") { if fontSize > 8 { fontSize -= 2 } }.keyboardShortcut("-", modifiers: [.command])
+                    
+                    // Для Windows-привычки (Control)
+                    Button("") { fontSize += 2 }.keyboardShortcut("+", modifiers: [.control])
+                    Button("") { if fontSize > 8 { fontSize -= 2 } }.keyboardShortcut("-", modifiers: [.control])
+                }.opacity(0)
+            )
+            .alert("Начать заново?", isPresented: $showResetAlert) {
+                Button("Отмена", role: .cancel) { }
+                Button("Да, удалить", role: .destructive) { vm.regenerateBook() }
+            }
+            .fileImporter(isPresented: $showFilePicker, allowedContentTypes: [.pdf]) { res in
+                if case .success(let url) = res { vm.loadBook(url: url) }
+            }
+        }.navigationViewStyle(.stack)
+    }
+}
+
+struct PageDetailView: View {
+    let page: TranslatedPage
+    let fontSize: Double
+    let onRefresh: () -> Void
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("СТРАНИЦА \(page.id + 1)").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(.secondary)
+                Spacer()
+                if page.status != .loading {
+                    Button(action: onRefresh) { Image(systemName: "arrow.clockwise").font(.caption2) }.buttonStyle(.borderless)
+                }
+            }
+            
+            if page.status == .loading {
+                ProgressView().frame(maxWidth: .infinity).padding()
+            } else {
+                let lines = page.translatedText.components(separatedBy: .newlines)
+                ForEach(0..<lines.count, id: \.self) { i in
+                    let line = lines[i]
+                    if line.hasPrefix("#") {
+                        Text(line.replacingOccurrences(of: "#", with: "").trimmingCharacters(in: .whitespaces))
+                            .font(.system(size: fontSize + 8, weight: .bold, design: .serif))
+                            .padding(.vertical, 4)
+                    } else if !line.isEmpty {
+                        Text(line)
+                            .font(.system(size: fontSize, weight: .regular, design: .serif))
+                            .lineSpacing(fontSize / 2.5)
+                    }
+                }
+            }
+            Divider().padding(.top, 10)
+        }
+    }
+}

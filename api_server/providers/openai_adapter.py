@@ -145,8 +145,21 @@ class OpenAIProvider:
         
         last_error = "unknown_error"
 
+        # Настройки повторных попыток
+        TOTAL_TIMEOUT = 120  # 2 минуты
+        start_time = time.time()
+        
         for model_name in models_to_try:
-            for attempt in range(1, max_retries + 1):
+            # Сбрасываем счетчик попыток для каждой модели
+            attempt = 0
+            while True:
+                attempt += 1
+                
+                # Проверка общего таймаута
+                if time.time() - start_time > TOTAL_TIMEOUT:
+                    logger.warning("⏱️ Total timeout exceeded (120s). Aborting.")
+                    return {"b64": None, "reason": "timeout"}
+
                 try:
                     logger.info(f"🎨 GenAI Attempt ({model_name}). User Pro: {is_pro}. Attempt {attempt}...")
                     
@@ -159,7 +172,7 @@ class OpenAIProvider:
                     if not response.candidates:
                         logger.warning(f"⚠️ Пустой ответ от {model_name} (Safety filter?)")
                         last_error = "safety_filter"
-                        break 
+                        break # Safety filter - нет смысла повторять с этой моделью
 
                     candidate = response.candidates[0]
 
@@ -169,20 +182,28 @@ class OpenAIProvider:
                         
                         if str(finish_reason) in ["SAFETY", "BLOCK_LOW_AND_ABOVE", "BLOCK_MEDIUM_AND_ABOVE"]:
                             last_error = "safety_filter"
+                            break # Safety filter - нет смысла повторять
                         else:
                             last_error = "model_refusal"
                         
                         time.sleep(1)
-                        continue
+                        continue # Пробуем еще раз, вдруг глюк
 
+                    # Успешный ответ
                     for part in candidate.content.parts:
                         if part.inline_data and part.inline_data.data:
                             raw = part.inline_data.data
                             if isinstance(raw, str): raw = base64.b64decode(raw)
-                            out_img = Image.open(io.BytesIO(raw))
-                            buf = io.BytesIO()
-                            out_img.save(buf, format="JPEG", quality=90)
-                            return {"b64": base64.b64encode(buf.getvalue()).decode("utf-8"), "reason": None}
+                            # Проверяем, что это валидная картинка
+                            try:
+                                out_img = Image.open(io.BytesIO(raw))
+                                buf = io.BytesIO()
+                                out_img.save(buf, format="JPEG", quality=90)
+                                return {"b64": base64.b64encode(buf.getvalue()).decode("utf-8"), "reason": None}
+                            except Exception:
+                                logger.error("Получены битые данные изображения")
+                                last_error = "invalid_image_data"
+                                continue
                         
                         if part.text:
                             logger.warning(f"⚠️ Model refused with text: {part.text[:100]}...")
@@ -193,20 +214,38 @@ class OpenAIProvider:
 
                 except Exception as e:
                     err_str = str(e)
+                    
+                    # 1. Модель не найдена (404) -> переходим к следующей модели сразу
                     if "404" in err_str and "NOT_FOUND" in err_str:
                         logger.error(f"❌ Модель {model_name} не найдена (404). Проверь название в .env")
                         last_error = "model_not_found"
                         break 
                     
+                    # 2. Лимиты (429) -> ждем и пробуем снова (экспоненциально)
                     if "429" in err_str or "Resource exhausted" in err_str:
-                        logger.warning(f"🚫 Лимиты {model_name}. Break.")
+                        wait_time = min(2 ** (attempt - 1) + 1, 15) # 2, 3, 5, 9, 15...
+                        logger.warning(f"🚫 Лимиты {model_name} (429). Ждем {wait_time} сек...")
+                        time.sleep(wait_time)
                         last_error = "limit_exceeded"
-                        break 
+                        continue # Пробуем эту же модель снова
                         
+                    # 3. Перегрузка (503) -> ждем и пробуем снова
+                    if "503" in err_str or "Overloaded" in err_str:
+                        wait_time = min(2 ** (attempt - 1) + 1, 10)
+                        logger.warning(f"🔥 Перегрузка {model_name} (503). Ждем {wait_time} сек...")
+                        time.sleep(wait_time)
+                        last_error = "server_overloaded"
+                        continue
+
+                    # 4. Прочие ошибки
                     logger.warning(f"⚠️ Error {model_name}: {err_str}")
                     last_error = "api_error"
-                    time.sleep(1)
+                    time.sleep(2)
             
+            # Если вышли из while (break), значит модель не справилась окончательно
+            if model_name == primary_model and len(models_to_try) > 1:
+                logger.warning(f"🔄 FALLBACK ACTIVATED. Primary '{model_name}' failed. Reason: {last_error}")
+
         return {"b64": None, "reason": last_error}
 
     def edit_image_b64(self, image_bytes: bytes, prompt: str, size: str = "1024x1024", is_pro: bool = False) -> Dict[str, Any]:

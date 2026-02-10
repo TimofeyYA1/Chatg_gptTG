@@ -202,6 +202,21 @@ class Payment(Base):
     )
 
 
+class PromoToken(Base):
+    __tablename__ = "promo_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    credits: Mapped[int] = mapped_column(Integer, default=10)
+    is_used: Mapped[bool] = mapped_column(Boolean, default=False)
+    used_by_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 # -------------------- CATALOG (EDITOR & SHOOTS) --------------------
 
 

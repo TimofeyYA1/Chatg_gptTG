@@ -3,6 +3,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from dateutil.relativedelta import relativedelta
 
 # Импортируем Bot для отправки уведомлений
@@ -42,12 +43,12 @@ def _get_or_create_credits(db: Session, user_id: int) -> PremiumCredits:
 PLANS_CONFIG = {
     # STANDARD
     "Week_Std":  {"price": 399,   "desc": "Обычная: Неделя", "rec_interval": "Week",  "rec_period": 1},
-    "Month_Std": {"price": 799,  "desc": "Обычная версия месяц",  "rec_interval": "Month", "rec_period": 1},
+    "Month_Std": {"price": 799,  "desc": "Базовый — 1 месяц",  "rec_interval": "Month", "rec_period": 1},
     "Year_Std":  {"price": 5999,  "desc": "Обычная: Год",    "rec_interval": "Year",  "rec_period": 1},
 
     # PRO
     "Week_Pro":  {"price": 799,   "desc": "Pro: Неделя", "rec_interval": "Week",  "rec_period": 1},
-    "Month_Pro": {"price": 1599,  "desc": "Pro версия месяц",  "rec_interval": "Month", "rec_period": 1},
+    "Month_Pro": {"price": 1599,  "desc": "PRO — 1 месяц",  "rec_interval": "Month", "rec_period": 1},
     "Year_Pro":  {"price": 11999, "desc": "Pro: Год",    "rec_interval": "Year",  "rec_period": 1},
 }
 
@@ -65,58 +66,57 @@ PACKAGES_CONFIG = {
 }
 
 
-# --- ПОМОЩНИК ОТПРАВКИ СООБЩЕНИЙ ---
 async def send_success_notification(chat_id: int, plan_key: str, message_id: int = 0):
     """
     1. Изменяет старое сообщение на "Максимальный доступ включен".
     2. Отправляет НОВОЕ сообщение с призывом отправить фото.
     """
     try:
-        # Данные для текста
-        plan_conf = PLANS_CONFIG.get(plan_key, {})
-        price = plan_conf.get("price", "---")
-
-        # Расчет даты следующего списания для текста
-        now = datetime.now(timezone.utc)
-
-        # Определяем название плана для пользователя
-        is_pro = "Pro" in plan_key
-        tier_name = "Pro" if is_pro else "Обычная"
-
-        if "Week" in plan_key:
-            next_date_dt = now + timedelta(days=7)
-            period_str = "7 дней"
-            limit_str = "150"
-        elif "Month" in plan_key:
-            next_date_dt = now + relativedelta(months=1)
-            period_str = "месяц"
-            limit_str = "300"
-        else:  # Year
-            next_date_dt = now + relativedelta(years=1)
-            period_str = "год"
-            limit_str = "7200"
-
-        plan_name = f"Премиум {tier_name}, {period_str} ({limit_str} генераций)"
-        next_date_str = next_date_dt.strftime("%d.%m.%Y, %H:%M MSK")
-
-        # Текст 1: Поздравление
-        text_congrats = (
-            "✅ <b>Максимальный доступ включён!</b>\n\n"
-            f"✨ Генераций осталось: {limit_str}\n"
-            f"🌸 Текущая подписка: {plan_name}\n"
-            f"💳 Следующее списание: {next_date_str} ({price}₽)\n\n"
-            "💡 Хочешь ещё больше крутых образов? Посмотри /packages и пополняй генерации!"
-        )
-
-        # Текст 2: Инструкция (приходит следом)
-        text_start = (
-            "🏁 <b>Начинаем творить!</b>\n\n"
-            "✨ <b>FaceLab</b> — меняй образ за секунды!\n"
-            "Примеряй стили и тренды за пару кликов.\n\n"
-            "📸 <b>Пожалуйста, отправьте фото, где хорошо видно лицо — и мы сразу создадим новый образ!</b>"
-        )
-
         async with Bot(token=settings.TELEGRAM_BOT_TOKEN) as bot:
+            # Данные для текста
+            plan_conf = PLANS_CONFIG.get(plan_key, {})
+            price = plan_conf.get("price", "---")
+
+            # Расчет даты следующего списания для текста
+            now = datetime.now(timezone.utc)
+
+            # Определяем название плана для пользователя
+            is_pro = "Pro" in plan_key
+            tier_name = "Pro" if is_pro else "Обычная"
+
+            if "Week" in plan_key:
+                next_date_dt = now + timedelta(days=7)
+                period_str = "7 дней"
+                limit_str = "150"
+            elif "Month" in plan_key:
+                next_date_dt = now + relativedelta(months=1)
+                period_str = "месяц"
+                limit_str = "300"
+            else:  # Year
+                next_date_dt = now + relativedelta(years=1)
+                period_str = "год"
+                limit_str = "7200"
+
+            plan_name = f"Премиум {tier_name}, {period_str} ({limit_str} генераций)"
+            next_date_str = next_date_dt.strftime("%d.%m.%Y, %H:%M MSK")
+
+            # Текст 1: Поздравление
+            text_congrats = (
+                "✅ <b>Максимальный доступ включён!</b>\n\n"
+                f"✨ Генераций осталось: {limit_str}\n"
+                f"🌸 Текущая подписка: {plan_name}\n"
+                f"💳 Следующее списание: {next_date_str} ({price}₽)\n\n"
+                "💡 Хочешь ещё больше крутых образов? Посмотри /packages и пополняй генерации!"
+            )
+
+            # Текст 2: Инструкция (приходит следом)
+            text_start = (
+                "🏁 <b>Начинаем творить!</b>\n\n"
+                "✨ <b>FaceLab</b> — меняй образ за секунды!\n"
+                "Примеряй стили и тренды за пару кликов.\n\n"
+                "📸 <b>Пожалуйста, отправьте фото, где хорошо видно лицо — и мы сразу создадим новый образ!</b>"
+            )
+
             # ШАГ 1: Редактируем сообщение с оплатой
             if message_id and message_id > 0:
                 try:
@@ -138,8 +138,42 @@ async def send_success_notification(chat_id: int, plan_key: str, message_id: int
             # ШАГ 2: Отправляем призыв к действию (Start)
             await bot.send_message(chat_id=chat_id, text=text_start, parse_mode="HTML")
 
+            # ШАГ 3: Уведомление админам
+            await notify_admins(bot, chat_id, f"Подписка: {plan_key}", price)
+
     except Exception as e:
         logger.error(f"Failed to send TG notification to {chat_id}: {e}")
+
+async def notify_admins(bot: Bot, user_id: int, item_name: str, price: Any):
+    # Жестко прописанные ID админов из mylook.py (лучше вынести в конфиг, но пока так)
+    ADMIN_IDS = [847867090, 370260285]
+    
+    try:
+        # Пытаемся получить инфо о юзере (если бот видел его недавно)
+        try:
+            chat = await bot.get_chat(user_id)
+            username = f"@{chat.username}" if chat.username else f"ID: {user_id}"
+            full_name = chat.full_name or "Unknown"
+        except:
+            username = f"ID: {user_id}"
+            full_name = "Unknown"
+
+        text = (
+            f"💰 <b>НОВАЯ ПОКУПКА!</b>\n\n"
+            f"👤 <b>Пользователь:</b> {full_name} ({username})\n"
+            f"🛒 <b>Товар:</b> {item_name}\n"
+            f"💵 <b>Сумма:</b> {price}₽"
+        )
+
+        for admin_id in ADMIN_IDS:
+            try:
+                await bot.send_message(chat_id=admin_id, text=text, parse_mode="HTML")
+            except Exception as e:
+                logger.warning(f"Failed to notify admin {admin_id}: {e}")
+
+    except Exception as e:
+        logger.error(f"Failed to prepare admin notification: {e}")
+
 
 
 # -------------------------------------------------------------------------
@@ -383,5 +417,22 @@ async def cloudpayments_webhook(request: Request, db: Session = Depends(get_db))
             credits.image_credits = (credits.image_credits or 0) + qty
             db.commit()
             logger.info(f"✅ Package credits saved to DB for {chat_id}")
+
+            # Уведомление о покупке пакета
+            pkg_conf = PACKAGES_CONFIG.get(str(qty), {})
+            price = pkg_conf.get("price", 0)
+            async with Bot(token=settings.TELEGRAM_BOT_TOKEN) as bot:
+                 await notify_admins(bot, chat_id, f"Пакет: {qty} генераций", price)
+            
+            # Пользователю тоже можно отправить подтверждение, если message_id был
+            if message_id:
+                async with Bot(token=settings.TELEGRAM_BOT_TOKEN) as bot:
+                    try:
+                        await bot.send_message(
+                            chat_id=chat_id, 
+                            text=f"✅ <b>Оплата прошла успешно!</b>\nВам начислено {qty} дополнительных генераций.",
+                            parse_mode="HTML"
+                        )
+                    except: pass
 
     return Response(content='{"code":0}', media_type="application/json")

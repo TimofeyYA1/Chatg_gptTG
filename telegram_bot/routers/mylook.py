@@ -280,6 +280,25 @@ async def set_menu_command(message: Message):
 @router.message(CommandStart())
 async def start(message: Message, state: FSMContext) -> None:
     await state.clear()
+    
+    # Обработка промо-ссылок
+    command_parts = message.text.split()
+    if len(command_parts) > 1:
+        token = command_parts[1]
+        res = await api_client.use_promo(message.chat.id, token)
+        if res.get("ok"):
+            credits = res.get("credits_added", 10)
+            await message.answer(f"🎁 <b>Поздравляем!</b>\nВам начислено {credits} бесплатных генераций по пригласительной ссылке!")
+        else:
+            err = res.get("error")
+            if err == "token_already_used":
+                await message.answer("⚠️ Эта ссылка уже была использована.")
+            elif err == "already_had_subscription":
+                await message.answer("⚠️ Простите, эта ссылка только для новых пользователей, которые еще не покупали подписку.")
+            elif err == "promo_already_used_by_user":
+                await message.answer("⚠️ Вы уже активировали подобную ссылку ранее. Повторная активация невозможна.")
+            # Если token_not_found — возможно это другой тип ссылки, просто игнорируем или логируем
+
     await api_client.ensure_user(message.chat.id)
     
     # ЛОГИКА СТАРТА
@@ -316,6 +335,60 @@ async def cmd_update_prompts(message: Message):
         if process.returncode == 0: await status_msg.edit_text(f"✅ <b>Успешно!</b>\n<pre>{output[-500:]}</pre>")
         else: await status_msg.edit_text(f"❌ <b>Ошибка:</b>\n<pre>{error}</pre>\n<pre>{output}</pre>")
     except Exception as e: await status_msg.edit_text(f"❌ <b>Критическая ошибка:</b>\n{html.quote(str(e))}")
+    
+@router.message(Command("gen"))
+async def cmd_gen_promo(message: Message):
+    if message.from_user.id not in ADMIN_IDS: return
+
+    args = message.text.split()
+    count = 1
+    if len(args) > 1 and args[1].isdigit():
+        count = int(args[1])
+    
+    if count > 50:
+        await message.answer("Максимум 50 за раз.")
+        return
+
+    res = await api_client.generate_promo(count=count, credits=10)
+    if res.get("ok"):
+        tokens = res.get("tokens", [])
+        bot_info = await message.bot.get_me()
+        lines = []
+        for i, t in enumerate(tokens, 1):
+            link = f"https://t.me/{bot_info.username}?start={t}"
+            lines.append(f"{i}. {link}")
+        
+        await message.answer(
+            f"✅ <b>Сгенерировано ссылок: {len(tokens)}</b>\n\n" + "\n".join(lines),
+            disable_web_page_preview=True
+        )
+    else:
+        await message.answer(f"❌ <b>Ошибка API:</b>\n{res.get('error')}")
+
+@router.message(Command("export"))
+async def cmd_export_stats(message: Message):
+    if message.from_user.id not in ADMIN_IDS: return
+
+    status_msg = await message.answer("⏳ <b>Собираю статистику...</b>\nЭто может занять некоторое время.")
+    
+    try:
+        # Используем токен бота как секрет для доступа к API
+        file_bytes = await api_client.export_stats(settings.TELEGRAM_BOT_TOKEN)
+        
+        if file_bytes:
+            current_date = datetime.now().strftime("%Y-%m-%d")
+            filename = f"users_stats_{current_date}.xlsx"
+            
+            await message.answer_document(
+                BufferedInputFile(file_bytes, filename=filename),
+                caption=f"📊 <b>Статистика пользователей</b>\nНа {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+            )
+            await status_msg.delete()
+        else:
+            await status_msg.edit_text("❌ Не удалось получить файл от сервера.")
+            
+    except Exception as e:
+        await status_msg.edit_text(f"❌ Ошибка: {e}")
 
 @router.message(F.photo, F.caption)
 async def handle_photo_with_prompt(message: Message, state: FSMContext):
@@ -516,7 +589,7 @@ async def on_tier_pro(call: CallbackQuery, state: FSMContext):
     # PRO ВЕРСИЯ
     caption = ui.PREMIUM_PAYWALL_CAPTION_RU
     kb = ui.kb_premium_paywall("ru", tier="pro")
-    await panel_edit_media(call, state, img_ui("man"), caption='', kb=kb)
+    await panel_edit_media(call, state, img_ui("man1"), caption='', kb=kb)
     await call.answer()
 
 @router.callback_query(F.data == "nav:back_to_tiers")
@@ -1041,6 +1114,19 @@ async def _process_generation(message: Message, state: FSMContext, prompt: str =
         try: await message.edit_caption(caption=ui.TEXTS["ru"]["gen_wait"], reply_markup=None)
         except: pass
 
+    # Запускаем задачу "обновления" сообщения, если долго
+    async def _update_wait_message():
+        await asyncio.sleep(15) # Ждем 15 сек перед первым предупреждением
+        if is_new_message and wait_msg:
+             try: await wait_msg.edit_text(ui.TEXTS["ru"]["gen_wait_long"])
+             except: pass
+        elif not is_new_message:
+             try: await message.edit_caption(caption=ui.TEXTS["ru"]["gen_wait_long"], reply_markup=None)
+             except: pass
+
+    # Создаем таску, но не await'им её, чтобы не блокировать генерацию
+    long_wait_task = asyncio.create_task(_update_wait_message())
+
     try:
         data = await state.get_data()
         file_id = data.get("photo_file_id")
@@ -1060,6 +1146,9 @@ async def _process_generation(message: Message, state: FSMContext, prompt: str =
                 shoot_sel=data.get("shoot_sel", {})
             )
 
+        # Отменяем таску ожидания, если успели
+        long_wait_task.cancel()
+        
         if wait_msg:
             try:
                 await wait_msg.delete()
@@ -1096,12 +1185,14 @@ async def _process_generation(message: Message, state: FSMContext, prompt: str =
             else:
                 # === ОБРАБОТКА ОШИБКИ ГЕНЕРАЦИИ ===
                 is_stub = res.get("stub")
-                fail_reason = res.get("fail_reason", "unknown")
+                fail_reason = res.get("reason") or res.get("fail_reason", "unknown")
                 
                 error_messages = {
                     "safety_filter": "🔞 <b>Нейросеть заблокировала генерацию.</b>\nПохоже, фото содержит лицо, которое алгоритмы Google сочли небезопасным (Safety Filter). Попробуйте другое фото или менее вызывающий стиль.",
                     "model_refusal": "🤖 Нейросеть отказалась обрабатывать этот запрос.",
                     "limit_exceeded": "⏳ Сервер перегружен запросами к нейросети. Попробуйте через минуту.",
+                    "timeout": "⏳ <b>Нейросеть не ответила вовремя.</b>\nСервер сильно загружен. Пожалуйста, попробуйте еще раз через пару минут.",
+                    "server_overloaded": "🔥 <b>Сервер перегружен.</b>\nСлишком много запросов прямо сейчас. Подождите минутку.",
                     "api_error": "🛠 Внутренняя ошибка нейросети. Попробуйте еще раз.",
                     "invalid_image_file": "❌ Не удалось прочитать файл изображения.",
                     "unknown": "⚠️ Не удалось сгенерировать изображение по техническим причинам."
@@ -1112,7 +1203,7 @@ async def _process_generation(message: Message, state: FSMContext, prompt: str =
                 if is_stub:
                     await message.answer(user_text)
                 else:
-                    await message.answer("⚠️ Пустой результат.")
+                    await message.answer(user_text) # Просто выводим текст ошибки
         else:
             err = res.get("error", "unknown")
             if err == "limit_exceeded":
@@ -1126,6 +1217,10 @@ async def _process_generation(message: Message, state: FSMContext, prompt: str =
 
     except Exception as e:
         print(f"Gen Error: {e}")
+        # Отменяем таску при ошибке
+        try: long_wait_task.cancel()
+        except: pass
+
         if wait_msg: 
             try: await wait_msg.delete()
             except: pass
