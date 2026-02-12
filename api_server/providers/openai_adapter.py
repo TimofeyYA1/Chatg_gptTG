@@ -110,28 +110,31 @@ class OpenAIProvider:
             return {"b64": None, "reason": "pillow_missing"}
 
         # --- МОДЕЛИ ИЗ КОНФИГА ---
-        # PRIMARY (она же PRO) -> gemini-3-pro-image-preview
         primary_model = os.getenv("NANOBANANA_MODEL_IMAGE") or getattr(settings, "NANOBANANA_MODEL_IMAGE", "gemini-3-pro-image-preview")
-        # FALLBACK (она же STANDARD) -> gemini-2.0-flash-exp
         fallback_model = os.getenv("NANOBANANA_MODEL_IMAGE_FALLBACK") or getattr(settings, "NANOBANANA_MODEL_IMAGE_FALLBACK", "gemini-2.5-flash-image")
         
         models_to_try = []
-
         if is_pro:
-            # Юзер PRO: Сначала Primary (Pro), затем Fallback (Std)
             models_to_try.append(primary_model)
             if fallback_model != primary_model:
                 models_to_try.append(fallback_model)
         else:
-            # Юзер ОБЫЧНЫЙ: Только Fallback (Std)
             models_to_try.append(fallback_model)
-
-        max_retries = getattr(settings, "NANOBANANA_MAX_RETRIES", 2)
 
         try:
             img = Image.open(io.BytesIO(image_bytes))
         except Exception:
             return {"b64": None, "reason": "invalid_image_file"}
+
+        # Системная инструкция для стабильности сохранения лица
+        # Мы переносим это сюда из роутера, чтобы модель видела это как системное правило
+        system_instruction = (
+            "You are a professional high-fidelity image editor. "
+            "CRITICAL REQUIREMENT: You MUST preserve the exact facial identity, structure, and features of the person from the source image. "
+            "The output image must look exactly like the same person. Do not change eyes, nose, mouth, or jawline. "
+            "Keep the skin tone consistent. High fidelity face swap.\n"
+            "If the user asks for multiple images or files, focus on creating ONE perfect image that follows the description."
+        )
 
         # Конфиг безопасности
         safety_settings = [
@@ -141,21 +144,15 @@ class OpenAIProvider:
             {'category': 'HARM_CATEGORY_HARASSMENT', 'threshold': 'BLOCK_NONE'},
         ]
         
-        config = {'safety_settings': safety_settings}
-        
         last_error = "unknown_error"
-
-        # Настройки повторных попыток
-        TOTAL_TIMEOUT = 120  # 2 минуты
+        TOTAL_TIMEOUT = 120
         start_time = time.time()
         
         for model_name in models_to_try:
-            # Сбрасываем счетчик попыток для каждой модели
             attempt = 0
-            while True:
+            while attempt < 3: # Ограничиваем количество попыток на одну модель
                 attempt += 1
                 
-                # Проверка общего таймаута
                 if time.time() - start_time > TOTAL_TIMEOUT:
                     logger.warning("⏱️ Total timeout exceeded (120s). Aborting.")
                     return {"b64": None, "reason": "timeout"}
@@ -163,38 +160,47 @@ class OpenAIProvider:
                 try:
                     logger.info(f"🎨 GenAI Attempt ({model_name}). User Pro: {is_pro}. Attempt {attempt}...")
                     
+                    # Используем расширенный конфиг с системной инструкцией
                     response = self._nano_client.models.generate_content(
                         model=model_name,
                         contents=[prompt, img],
-                        config=config
+                        config=types.GenerateContentConfig(
+                            system_instruction=system_instruction,
+                            safety_settings=safety_settings,
+                            # Мы не используем tools, чтобы избежать MALFORMED_FUNCTION_CALL
+                        )
                     )
 
                     if not response.candidates:
                         logger.warning(f"⚠️ Пустой ответ от {model_name} (Safety filter?)")
                         last_error = "safety_filter"
-                        break # Safety filter - нет смысла повторять с этой моделью
+                        break 
 
                     candidate = response.candidates[0]
+                    finish_reason = str(getattr(candidate, 'finish_reason', 'UNKNOWN'))
 
                     if not candidate.content or not candidate.content.parts:
-                        finish_reason = getattr(candidate, 'finish_reason', 'UNKNOWN')
                         logger.warning(f"⚠️ Модель {model_name} вернула кандидата без контента. FinishReason: {finish_reason}")
                         
-                        if str(finish_reason) in ["SAFETY", "BLOCK_LOW_AND_ABOVE", "BLOCK_MEDIUM_AND_ABOVE"]:
+                        if any(x in finish_reason for x in ["SAFETY", "BLOCK"]):
                             last_error = "safety_filter"
-                            break # Safety filter - нет смысла повторять
-                        else:
-                            last_error = "model_refusal"
+                            break 
                         
+                        if "MALFORMED_FUNCTION_CALL" in finish_reason:
+                            logger.error(f"❌ MALFORMED_FUNCTION_CALL detected. Prompt might be too complex for {model_name}.")
+                            last_error = "malformed_function_call"
+                            # Если это основная модель, попробуем следующую (fallback)
+                            break
+
+                        last_error = "model_refusal"
                         time.sleep(1)
-                        continue # Пробуем еще раз, вдруг глюк
+                        continue 
 
                     # Успешный ответ
                     for part in candidate.content.parts:
                         if part.inline_data and part.inline_data.data:
                             raw = part.inline_data.data
                             if isinstance(raw, str): raw = base64.b64decode(raw)
-                            # Проверяем, что это валидная картинка
                             try:
                                 out_img = Image.open(io.BytesIO(raw))
                                 buf = io.BytesIO()
@@ -214,22 +220,18 @@ class OpenAIProvider:
 
                 except Exception as e:
                     err_str = str(e)
-                    
-                    # 1. Модель не найдена (404) -> переходим к следующей модели сразу
                     if "404" in err_str and "NOT_FOUND" in err_str:
-                        logger.error(f"❌ Модель {model_name} не найдена (404). Проверь название в .env")
+                        logger.error(f"❌ Модель {model_name} не найдена (404).")
                         last_error = "model_not_found"
                         break 
                     
-                    # 2. Лимиты (429) -> ждем и пробуем снова (экспоненциально)
                     if "429" in err_str or "Resource exhausted" in err_str:
-                        wait_time = min(2 ** (attempt - 1) + 1, 15) # 2, 3, 5, 9, 15...
+                        wait_time = min(2 ** (attempt - 1) + 1, 15)
                         logger.warning(f"🚫 Лимиты {model_name} (429). Ждем {wait_time} сек...")
                         time.sleep(wait_time)
                         last_error = "limit_exceeded"
-                        continue # Пробуем эту же модель снова
+                        continue 
                         
-                    # 3. Перегрузка (503) -> ждем и пробуем снова
                     if "503" in err_str or "Overloaded" in err_str:
                         wait_time = min(2 ** (attempt - 1) + 1, 10)
                         logger.warning(f"🔥 Перегрузка {model_name} (503). Ждем {wait_time} сек...")
@@ -237,12 +239,10 @@ class OpenAIProvider:
                         last_error = "server_overloaded"
                         continue
 
-                    # 4. Прочие ошибки
                     logger.warning(f"⚠️ Error {model_name}: {err_str}")
                     last_error = "api_error"
                     time.sleep(2)
             
-            # Если вышли из while (break), значит модель не справилась окончательно
             if model_name == primary_model and len(models_to_try) > 1:
                 logger.warning(f"🔄 FALLBACK ACTIVATED. Primary '{model_name}' failed. Reason: {last_error}")
 

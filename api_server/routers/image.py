@@ -217,7 +217,7 @@ def generate_from_catalog(data: CatalogGenIn, db: Session = Depends(get_db)):
         _rollback_limit(db, user)
         return {"ok": False, "error": "no_selection"}
 
-    prompt_parts.append(PRESERVE_FACE_INSTRUCTION)
+    # prompt_parts.append(PRESERVE_FACE_INSTRUCTION) # Переносим в системные инструкции провайдера
     final_prompt = ". ".join(prompt_parts)
     logger.info(f"📝 Итоговый промпт: {final_prompt[:200]}...")
 
@@ -270,12 +270,16 @@ def edit_image(data: ImageEditIn, db: Session = Depends(get_db)):
         return {"ok": False, "error": "bad_image_b64"}
 
     provider = OpenAIProvider()
-    full_prompt = f"{data.prompt}.{PRESERVE_FACE_INSTRUCTION}"
     
-    logger.info(f"📝 Custom Edit Prompt: {full_prompt[:100]}...")
+    # Собираем промпт с учетом системных инструкций
+    # ВАЖНО: Мы больше не конкатенируем PRESERVE_FACE_INSTRUCTION здесь, 
+    # так как переместим её в system_instruction внутри провайдера для стабильности.
+    user_prompt = data.prompt.strip()
+    
+    logger.info(f"📝 Custom Edit Prompt: {user_prompt[:100]}...")
 
     # ПЕРЕДАЕМ is_pro ФЛАГ
-    result = provider.edit_image_b64(raw_image, full_prompt, size=data.size or "768x768", is_pro=is_pro_user)
+    result = provider.edit_image_b64(raw_image, user_prompt, size=data.size or "768x768", is_pro=is_pro_user)
     
     b64_str = result.get("b64")
     fail_reason = result.get("reason", "unknown")
