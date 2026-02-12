@@ -1,6 +1,16 @@
 import asyncio
+import logging
+import sys
 from aiogram.types import BotCommand, BotCommandScopeDefault
 from telegram_bot.bot_core import dp, bot
+
+# Базовая настройка логирования для бота
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger(__name__)
 
 async def on_startup(bot):
     await bot.set_my_commands(

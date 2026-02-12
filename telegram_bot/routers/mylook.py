@@ -27,8 +27,10 @@ from aiogram.types import (
 )
 from aiogram.exceptions import TelegramNetworkError, TelegramBadRequest
 from datetime import timedelta 
+import logging
 
 router = Router()
+logger = logging.getLogger(__name__)
 
 # -------------------- CONFIG --------------------
 
@@ -1218,7 +1220,11 @@ async def _process_generation(message: Message, state: FSMContext, prompt: str =
                 await message.answer(f"❌ Ошибка API: {err}")
 
     except Exception as e:
-        print(f"Gen Error: {e}")
+        chat_id = message.chat.id
+        data = await state.get_data()
+        prompt_info = prompt or data.get("last_custom_prompt") or "no prompt"
+        logger.error(f"❌ Gen Error for user {chat_id} | Prompt: {prompt_info} | Error: {e}", exc_info=True)
+        
         # Отменяем таску при ошибке
         try: long_wait_task.cancel()
         except: pass

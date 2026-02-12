@@ -1,3 +1,4 @@
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
@@ -5,9 +6,18 @@ from common.config import settings
 from api_server.routers import health, account, image, video, payments, research, labs, bot_webhook
 from api_server.routers import chats, subscriptions, promo
 from api_server.routers import usage  # <-- добавлено
-# from api_server.routers import referrals
+
+# Фильтр для отключения логов /healthz в консоли
+class HealthCheckFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.getMessage().find("/healthz") == -1
+
+# Применяем фильтр к основным логгерам uvicorn
+logging.getLogger("uvicorn.access").addFilter(HealthCheckFilter())
+logging.getLogger("uvicorn.error").addFilter(HealthCheckFilter())
 
 app = FastAPI(title="AI SuperBot API", default_response_class=ORJSONResponse)
+# from api_server.routers import referrals
 
 app.add_middleware(
     CORSMiddleware,

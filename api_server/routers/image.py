@@ -237,6 +237,7 @@ def generate_from_catalog(data: CatalogGenIn, db: Session = Depends(get_db)):
     if not b64:
         _rollback_limit(db, user)
         caption_text = "⚠️ Не удалось сгенерировать изображение."
+        logger.warning(f"❌ Generation from catalog failed for user {data.chat_id} | Reason: {fail_reason} | Prompt: {final_prompt}")
         return {
             "ok": True, 
             "stub": True, 
@@ -287,6 +288,7 @@ def edit_image(data: ImageEditIn, db: Session = Depends(get_db)):
     if not b64_str:
         _rollback_limit(db, user)
         caption_text = "⚠️ Не удалось сгенерировать изображение."
+        logger.warning(f"❌ Generation failed for user {data.chat_id} | Reason: {fail_reason} | Prompt: {data.prompt}")
         return {
             "ok": True, 
             "stub": True, 
