@@ -422,7 +422,7 @@ async def cloudpayments_webhook(request: Request, db: Session = Depends(get_db))
             pkg_conf = PACKAGES_CONFIG.get(str(qty), {})
             price = pkg_conf.get("price", 0)
             async with Bot(token=settings.TELEGRAM_BOT_TOKEN) as bot:
-                 await notify_admins(bot, chat_id, f"Пакет: {qty} генераций", price)
+                await notify_admins(bot, chat_id, f"Пакет: {qty} генераций", price)
             
             # Пользователю тоже можно отправить подтверждение, если message_id был
             if message_id:
