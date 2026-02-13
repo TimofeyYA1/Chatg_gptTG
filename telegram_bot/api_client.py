@@ -7,7 +7,8 @@ from typing import Any, Dict, Optional, Tuple
 import httpx
 
 API_BASE = os.getenv("API_BASE", "http://api:8000").rstrip("/")
-API_TIMEOUT = httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=5.0)
+# Увеличиваем таймаут на чтение до 120 секунд, так как генерация может быть долгой
+API_TIMEOUT = httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=5.0)
 
 _CACHE: Dict[Tuple[int, str], Tuple[float, Any]] = {}
 _CACHE_TTL_SEC = 20
@@ -210,7 +211,8 @@ async def edit_image(chat_id: int, prompt: str, image_b64: str) -> Dict[str, Any
         "image_b64": image_b64,
         "size": "768x768"
     }
-    timeout = httpx.Timeout(connect=5.0, read=90.0, write=10.0, pool=5.0)
+    # Используем увеличенный таймаут специально для генерации
+    timeout = httpx.Timeout(connect=10.0, read=180.0, write=10.0, pool=5.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         r = await client.post(f"{API_BASE}/image/edit", json=payload)
     if r.status_code != 200:
@@ -226,7 +228,8 @@ async def generate_from_catalog(chat_id: int, image_b64: str, gender: str, edito
         "editor_sel": editor_sel,
         "shoot_sel": shoot_sel
     }
-    timeout = httpx.Timeout(connect=5.0, read=90.0, write=10.0, pool=5.0)
+    # Используем увеличенный таймаут специально для генерации
+    timeout = httpx.Timeout(connect=10.0, read=180.0, write=10.0, pool=5.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         r = await client.post(f"{API_BASE}/image/generate_from_catalog", json=payload)
     if r.status_code != 200:
