@@ -46,6 +46,7 @@ services:
       - ./fonts/ARIALBD.TTF:/app/fonts/ARIALBD.TTF:ro
     restart: always
 
+
   backup_service:
     build: ./backup_service
     depends_on:

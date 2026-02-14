@@ -6,6 +6,7 @@ import io
 import base64
 import time
 import os
+import re
 
 from openai import OpenAI
 from common.config import settings
@@ -94,6 +95,32 @@ class OpenAIProvider:
             logger.exception("OpenAI chat_reply failed")
             return "🤖 Ошибка нейросети."
 
+    def nano_chat_reply(self, system_prompt: str, user_prompt: str, model_name: str = None) -> str:
+        """
+        Текстовый ответ через Gemini (NanoBanana).
+        """
+        if not self._nano_enabled():
+            return "🤖 Gemini provider disabled."
+        
+        # Если модель не указана, берем flash версию для скорости
+        if not model_name:
+            # Пытаемся взять из настроек или используем flash-preview
+            model_name = "gemini-2.0-flash-exp" # Или актуальное название flash-модели
+
+        try:
+            response = self._nano_client.models.generate_content(
+                model=model_name,
+                contents=user_prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    temperature=0.1, # Низкая температура для строгого перевода
+                )
+            )
+            return response.text.strip()
+        except Exception as e:
+            logger.error(f"❌ Gemini chat_reply failed: {e}")
+            return f"Error: {e}"
+
     # ------------- IMAGE -------------
 
     def _edit_image_with_nano(self, image_bytes: bytes, prompt: str, is_pro: bool = False) -> Dict[str, Any]:
@@ -144,6 +171,14 @@ class OpenAIProvider:
             {'category': 'HARM_CATEGORY_HARASSMENT', 'threshold': 'BLOCK_NONE'},
         ]
         
+        # Попытка извлечь соотношение сторон из промпта
+        aspect_ratio = None
+        # Ищем паттерны вида 16:9, 9:16, 4:3, 3:4, 1:1
+        ar_match = re.search(r'\b(16:9|9:16|4:3|3:4|1:1)\b', prompt)
+        if ar_match:
+            aspect_ratio = ar_match.group(1)
+            logger.info(f"📐 Detected aspect ratio in prompt: {aspect_ratio}")
+
         last_error = "unknown_error"
         TOTAL_TIMEOUT = 120
         start_time = time.time()
@@ -160,15 +195,20 @@ class OpenAIProvider:
                 try:
                     logger.info(f"🎨 GenAI Attempt ({model_name}). User Pro: {is_pro}. Attempt {attempt}...")
                     
-                    # Используем расширенный конфиг с системной инструкцией
+                    # Формируем конфиг
+                    gen_config = types.GenerateContentConfig(
+                        system_instruction=system_instruction,
+                        safety_settings=safety_settings,
+                    )
+                    
+                    # Если нашли соотношение сторон, добавляем в конфиг
+                    if aspect_ratio:
+                        gen_config.aspect_ratio = aspect_ratio
+
                     response = self._nano_client.models.generate_content(
                         model=model_name,
                         contents=[prompt, img],
-                        config=types.GenerateContentConfig(
-                            system_instruction=system_instruction,
-                            safety_settings=safety_settings,
-                            # Мы не используем tools, чтобы избежать MALFORMED_FUNCTION_CALL
-                        )
+                        config=gen_config
                     )
 
                     if not response.candidates:

@@ -272,15 +272,37 @@ def edit_image(data: ImageEditIn, db: Session = Depends(get_db)):
 
     provider = OpenAIProvider()
     
-    # Собираем промпт с учетом системных инструкций
-    # ВАЖНО: Мы больше не конкатенируем PRESERVE_FACE_INSTRUCTION здесь, 
-    # так как переместим её в system_instruction внутри провайдера для стабильности.
-    user_prompt = data.prompt.strip()
+    # --- 1. СТРОГИЙ ПЕРЕВОД ПРОМПТА НА АНГЛИЙСКИЙ ---
+    # Используем chat_reply для перевода БЕЗ "улучшений" и отсебятины.
     
-    logger.info(f"📝 Custom Edit Prompt: {user_prompt[:100]}...")
+    raw_prompt = data.prompt.strip()
+    
+    # Системный промпт для строгого переводчика
+    translator_system = (
+        "You are a professional translator. Translate the user's text to English accurately and strictly. "
+        "Do NOT add any extra descriptions, style improvements, or conversational filler. "
+        "Do NOT change the meaning. Keep technical terms (like '16:9', '4k', 'vertical') as is. "
+        "Output ONLY the translation."
+    )
+    
+    try:
+        # Используем Gemini 3 Flash Preview (или актуальный аналог Flash для перевода)
+        translated_prompt = provider.nano_chat_reply(
+            system_prompt=translator_system, 
+            user_prompt=raw_prompt,
+            model_name="gemini-2.0-flash-exp" # Самая быстрая и современная Flash-модель
+        )
+        if not translated_prompt or "Error" in translated_prompt:
+            translated_prompt = raw_prompt
+    except Exception as e:
+        logger.warning(f"⚠️ Prompt translation failed: {e}")
+        translated_prompt = raw_prompt
 
-    # ПЕРЕДАЕМ is_pro ФЛАГ
-    result = provider.edit_image_b64(raw_image, user_prompt, size=data.size or "768x768", is_pro=is_pro_user)
+    logger.info(f"📝 Original: {raw_prompt}")
+    logger.info(f"🇬🇧 Translated: {translated_prompt}")
+
+    # ПЕРЕДАЕМ is_pro ФЛАГ и переведенный промпт
+    result = provider.edit_image_b64(raw_image, translated_prompt, size=data.size or "768x768", is_pro=is_pro_user)
     
     b64_str = result.get("b64")
     fail_reason = result.get("reason", "unknown")
