@@ -233,8 +233,8 @@ async def edit_image(chat_id: int, prompt: str, image_b64: str) -> Dict[str, Any
         "image_b64": image_b64,
         "size": "768x768"
     }
-    # Используем увеличенный таймаут специально для генерации
-    timeout = httpx.Timeout(connect=10.0, read=180.0, write=10.0, pool=5.0)
+    # Используем увеличенный таймаут специально для генерации (должен быть больше TOTAL_TIMEOUT в API)
+    timeout = httpx.Timeout(connect=10.0, read=500.0, write=10.0, pool=5.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         r = await client.post(f"{API_BASE}/image/edit", json=payload)
     if r.status_code != 200:
@@ -250,8 +250,8 @@ async def generate_from_catalog(chat_id: int, image_b64: str, gender: str, edito
         "editor_sel": editor_sel,
         "shoot_sel": shoot_sel
     }
-    # Используем увеличенный таймаут специально для генерации
-    timeout = httpx.Timeout(connect=10.0, read=180.0, write=10.0, pool=5.0)
+    # Используем увеличенный таймаут специально для генерации (должен быть больше TOTAL_TIMEOUT в API)
+    timeout = httpx.Timeout(connect=10.0, read=500.0, write=10.0, pool=5.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         r = await client.post(f"{API_BASE}/image/generate_from_catalog", json=payload)
     if r.status_code != 200:

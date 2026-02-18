@@ -104,12 +104,14 @@ class OpenAIProvider:
             return "🤖 Gemini provider disabled."
         
         # Список моделей для попыток (если первая перегружена)
-        primary_model = model_name or os.getenv("NANOBANANA_MODEL_CHAT") or "gemini-2.0-flash-exp"
+        primary_model = model_name or os.getenv("NANOBANANA_MODEL_CHAT") or "gemini-3-pro-preview"
         fallback_model = getattr(settings, "NANOBANANA_MODEL_IMAGE_FALLBACK", "gemini-2.5-flash-image")
         
         models_to_try = [primary_model]
         if fallback_model and fallback_model != primary_model:
             models_to_try.append(fallback_model)
+
+        logger.info(f"🤖 Translation models to try: {models_to_try}")
 
         last_error = ""
         for current_model in models_to_try:
@@ -127,40 +129,38 @@ class OpenAIProvider:
             except Exception as e:
                 last_error = str(e)
                 if "503" in last_error or "high demand" in last_error.lower() or "UNAVAILABLE" in last_error:
-                    logger.warning(f"🔥 Model {current_model} is overloaded (503). Trying fallback if available...")
+                    if len(models_to_try) > 1 and current_model == models_to_try[0]:
+                        logger.warning(f"🔥 Модель {current_model} перегружена. Срочный переход на {models_to_try[1]} для перевода промпта. Причина: {last_error}")
+                        continue
+                
+                logger.error(f"❌ Ошибка перевода на модели {current_model}: {e}")
+                if len(models_to_try) > 1 and current_model == models_to_try[0]:
                     continue
-                else:
-                    logger.error(f"❌ Gemini chat_reply failed on {current_model}: {e}")
-                    break
+                break
         
         return f"Error: {last_error}"
 
     # ------------- IMAGE -------------
 
     def _edit_image_with_nano(self, image_bytes: bytes, prompt: str, is_pro: bool = False) -> Dict[str, Any]:
-        """
-        Возвращает словарь:
-        {
-            "b64": str | None,
-            "reason": str | None  # код ошибки (safety_filter, api_error и т.д.)
-        }
-        """
-        if not self._nano_enabled(): 
-            return {"b64": None, "reason": "provider_disabled"}
-        if Image is None: 
-            return {"b64": None, "reason": "pillow_missing"}
+        if not self._nano_enabled(): return {"b64": None, "reason": "provider_disabled"}
+        if Image is None: return {"b64": None, "reason": "pillow_missing"}
 
-        # --- МОДЕЛИ ИЗ КОНФИГА ---
-        primary_model = os.getenv("NANOBANANA_MODEL_IMAGE") or getattr(settings, "NANOBANANA_MODEL_IMAGE", "gemini-3-pro-image-preview")
-        fallback_model = os.getenv("NANOBANANA_MODEL_IMAGE_FALLBACK") or getattr(settings, "NANOBANANA_MODEL_IMAGE_FALLBACK", "gemini-2.5-flash-image")
+        # --- ЖЕСТКОЕ ФОРМИРОВАНИЕ СПИСКА МОДЕЛЕЙ ---
+        # Берем из настроек или используем дефолты напрямую
+        m_pro = str(getattr(settings, "NANOBANANA_MODEL_IMAGE", "gemini-3-pro-image-preview"))
+        m_flash = str(getattr(settings, "NANOBANANA_MODEL_IMAGE_FALLBACK", "gemini-2.5-flash-image"))
         
-        models_to_try = []
         if is_pro:
-            models_to_try.append(primary_model)
-            if fallback_model != primary_model:
-                models_to_try.append(fallback_model)
+            models_to_try = [m_pro, m_flash]
         else:
-            models_to_try.append(fallback_model)
+            # Для не-PRO тоже добавляем фоллбэк, но основным ставим flash
+            models_to_try = [m_flash, m_pro]
+            
+        # Удаляем дубликаты, если они есть
+        models_to_try = list(dict.fromkeys(models_to_try))
+
+        logger.info(f"📋 В очереди на генерацию: {models_to_try} (is_pro={is_pro})")
 
         try:
             img = Image.open(io.BytesIO(image_bytes))
@@ -209,27 +209,27 @@ class OpenAIProvider:
             logger.info(f"📐 Resulting aspect ratio: {aspect_ratio}")
 
         last_error = "unknown_error"
-        TOTAL_TIMEOUT = 300 # Увеличиваем общий таймаут до 5 минут
+        TOTAL_TIMEOUT = 400 
         start_time = time.time()
         
-        for model_name in models_to_try:
-            attempt = 0
-            while attempt < 3: # Ограничиваем количество попыток на одну модель
-                attempt += 1
-                
+        # СТРАТЕГИЯ ГЕНЕРАЦИИ: 2 цикла (Primary->Fallback) с паузой 30с между ними
+        # В каждом цикле пробуем каждую модель по ОДНОМУ разу.
+        for cycle in range(1, 3):
+            if cycle == 2:
+                logger.warning("⏳ Cycle 1 failed. Waiting 30s before FINAL CYCLE (Primary + Fallback)...")
+                time.sleep(30)
+
+            for m_idx, model_name in enumerate(models_to_try):
                 if time.time() - start_time > TOTAL_TIMEOUT:
                     logger.warning(f"⏱️ Total timeout exceeded ({TOTAL_TIMEOUT}s). Aborting.")
                     return {"b64": None, "reason": "timeout"}
 
                 try:
-                    logger.info(f"🎨 GenAI Attempt ({model_name}). User Pro: {is_pro}. Attempt {attempt}...")
+                    logger.info(f"🎨 Cycle {cycle} | Model: {model_name}")
                     
                     # Формируем итоговый промпт с явным указанием формата
-                    # Это помогает модели лучше понять ожидаемый результат вместе с параметром aspect_ratio
                     full_user_prompt = f"{prompt}\n\nIMPORTANT: Use {aspect_ratio} aspect ratio for the output image."
-                    
-                    logger.info(f"📝 Full Prompt: {full_user_prompt}")
-                    
+                
                     # Формируем конфиг
                     gen_config = types.GenerateContentConfig(
                         system_instruction=system_instruction,
@@ -245,34 +245,22 @@ class OpenAIProvider:
                     if not response:
                         logger.error(f"❌ No response object received from {model_name}")
                         last_error = "no_response"
-                        time.sleep(1)
                         continue
 
                     if not response.candidates:
                         logger.warning(f"⚠️ Пустой ответ от {model_name} (Safety filter?)")
-                        if hasattr(response, 'prompt_feedback'):
-                            logger.info(f"ℹ️ Prompt Feedback: {response.prompt_feedback}")
                         last_error = "safety_filter"
-                        break 
+                        continue # Пробуем следующую модель
 
                     candidate = response.candidates[0]
                     finish_reason = str(getattr(candidate, 'finish_reason', 'UNKNOWN'))
 
                     if not candidate.content or not candidate.content.parts:
                         logger.warning(f"⚠️ Модель {model_name} вернула кандидата без контента. FinishReason: {finish_reason}")
-                        
                         if any(x in finish_reason for x in ["SAFETY", "BLOCK"]):
                             last_error = "safety_filter"
-                            break 
-                        
-                        if "MALFORMED_FUNCTION_CALL" in finish_reason:
-                            logger.error(f"❌ MALFORMED_FUNCTION_CALL detected. Prompt might be too complex for {model_name}.")
-                            last_error = "malformed_function_call"
-                            # Если это основная модель, попробуем следующую (fallback)
-                            break
-
+                            continue # Пробуем следующую модель
                         last_error = "model_refusal"
-                        time.sleep(1)
                         continue 
 
                     # Успешный ответ
@@ -289,43 +277,30 @@ class OpenAIProvider:
                                 logger.error("Получены битые данные изображения")
                                 last_error = "invalid_image_data"
                                 continue
-                        
-                        if part.text:
-                            logger.warning(f"⚠️ Model refused with text: {part.text[:100]}...")
-                            last_error = "model_refusal"
-
-                    logger.warning(f"⚠️ Нет данных изображения от {model_name}")
-                    time.sleep(1)
+                    
+                    last_error = "no_image_in_parts"
 
                 except Exception as e:
                     err_str = str(e)
-                    if "404" in err_str and "NOT_FOUND" in err_str:
-                        logger.error(f"❌ Модель {model_name} не найдена (404).")
-                        last_error = "model_not_found"
-                        break 
+                    last_error = err_str
                     
-                    if "429" in err_str or "Resource exhausted" in err_str:
-                        wait_time = min(2 ** (attempt - 1) + 1, 15)
-                        logger.warning(f"🚫 Лимиты {model_name} (429). Ждем {wait_time} сек...")
-                        time.sleep(wait_time)
-                        last_error = "limit_exceeded"
+                    is_busy = any(x in err_str for x in ["503", "429", "Overloaded", "Resource exhausted", "high demand", "UNAVAILABLE"])
+                    
+                    if is_busy:
+                        logger.warning(f"⚠️ Модель {model_name} занята (busy): {err_str}")
+                    else:
+                        logger.error(f"❌ Ошибка API на модели {model_name}: {err_str}")
+                    
+                    if m_idx == 0 and len(models_to_try) > 1:
+                        logger.warning(f"🔄 FALLBACK: Переходим к следующей модели...")
                         continue 
-                        
-                    if "503" in err_str or "Overloaded" in err_str:
-                        wait_time = min(2 ** (attempt - 1) + 1, 10)
-                        logger.warning(f"🔥 Перегрузка {model_name} (503). Ждем {wait_time} сек...")
-                        time.sleep(wait_time)
-                        last_error = "server_overloaded"
-                        continue
+                    
+            # Конец цикла моделей
+            if cycle == 1:
+                logger.error(f"❌ Cycle 1 failed for all models. Last error: {last_error}")
 
-                    logger.warning(f"⚠️ Error {model_name}: {err_str}")
-                    last_error = "api_error"
-                    time.sleep(2)
-            
-            if model_name == primary_model and len(models_to_try) > 1:
-                logger.warning(f"🔄 FALLBACK ACTIVATED. Primary '{model_name}' failed. Reason: {last_error}")
+        return {"b64": None, "reason": "server_overloaded" if "503" in last_error else last_error}
 
-        return {"b64": None, "reason": last_error}
 
     def edit_image_b64(self, image_bytes: bytes, prompt: str, size: str = "1024x1024", is_pro: bool = False) -> Dict[str, Any]:
         """

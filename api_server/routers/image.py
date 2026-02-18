@@ -291,7 +291,7 @@ def edit_image(data: ImageEditIn, db: Session = Depends(get_db)):
         translated_prompt = provider.nano_chat_reply(
             system_prompt=translator_system, 
             user_prompt=raw_prompt,
-            model_name="gemini-2.0-flash-exp" # Самая быстрая и современная Flash-модель
+            model_name="gemini-3-flash-preview"# Самая быстрая и современная Flash-модель
         )
         if not translated_prompt or "Error" in translated_prompt:
             translated_prompt = raw_prompt
