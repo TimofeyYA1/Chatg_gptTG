@@ -13,6 +13,11 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
     restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   api:
     build: .
@@ -31,6 +36,11 @@ services:
       retries: 5
       start_period: 10s
     restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   bot:
     build: .
@@ -45,6 +55,11 @@ services:
     volumes:
       - ./fonts/ARIALBD.TTF:/app/fonts/ARIALBD.TTF:ro
     restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 
   backup_service:
@@ -57,6 +72,11 @@ services:
       - DB_HOST=db
       - ADMIN_CHAT_ID=847867090
     restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   db_data:

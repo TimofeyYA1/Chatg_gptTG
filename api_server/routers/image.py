@@ -229,6 +229,7 @@ def generate_from_catalog(data: CatalogGenIn, db: Session = Depends(get_db)):
 
     provider = OpenAIProvider()
     # ПЕРЕДАЕМ is_pro ФЛАГ
+    logger.info(f"🎨 Starting generation for user {data.chat_id} (Pro: {is_pro_user})")
     result = provider.edit_image_b64(raw_image, final_prompt, size="768x768", is_pro=is_pro_user)
     
     b64 = result.get("b64")
@@ -302,6 +303,7 @@ def edit_image(data: ImageEditIn, db: Session = Depends(get_db)):
     logger.info(f"🇬🇧 Translated: {translated_prompt}")
 
     # ПЕРЕДАЕМ is_pro ФЛАГ и переведенный промпт
+    logger.info(f"🎨 Starting custom edit for user {data.chat_id} (Pro: {is_pro_user})")
     result = provider.edit_image_b64(raw_image, translated_prompt, size=data.size or "768x768", is_pro=is_pro_user)
     
     b64_str = result.get("b64")

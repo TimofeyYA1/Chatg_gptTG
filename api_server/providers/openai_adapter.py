@@ -45,7 +45,8 @@ class OpenAIProvider:
             else:
                 try:
                     self._nano_client = _google_genai.Client(
-                        api_key=settings.GEMINI_API_KEY
+                        api_key=settings.GEMINI_API_KEY,
+                        http_options={'timeout': 300000} # 300,000 ms = 300 seconds (5 minutes)
                     )
                     logger.info("NanoBanana (Gemini) клиент инициализирован.")
                 except Exception:
@@ -102,24 +103,37 @@ class OpenAIProvider:
         if not self._nano_enabled():
             return "🤖 Gemini provider disabled."
         
-        # Если модель не указана, берем flash версию для скорости
-        if not model_name:
-            # Пытаемся взять из настроек или используем flash-preview
-            model_name = "gemini-2.0-flash-exp" # Или актуальное название flash-модели
+        # Список моделей для попыток (если первая перегружена)
+        primary_model = model_name or os.getenv("NANOBANANA_MODEL_CHAT") or "gemini-2.0-flash-exp"
+        fallback_model = getattr(settings, "NANOBANANA_MODEL_IMAGE_FALLBACK", "gemini-2.5-flash-image")
+        
+        models_to_try = [primary_model]
+        if fallback_model and fallback_model != primary_model:
+            models_to_try.append(fallback_model)
 
-        try:
-            response = self._nano_client.models.generate_content(
-                model=model_name,
-                contents=user_prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_prompt,
-                    temperature=0.1, # Низкая температура для строгого перевода
+        last_error = ""
+        for current_model in models_to_try:
+            try:
+                logger.info(f"🤖 Gemini chat_reply attempt with model: {current_model}")
+                response = self._nano_client.models.generate_content(
+                    model=current_model,
+                    contents=user_prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_prompt,
+                        temperature=0.1,
+                    )
                 )
-            )
-            return response.text.strip()
-        except Exception as e:
-            logger.error(f"❌ Gemini chat_reply failed: {e}")
-            return f"Error: {e}"
+                return response.text.strip()
+            except Exception as e:
+                last_error = str(e)
+                if "503" in last_error or "high demand" in last_error.lower() or "UNAVAILABLE" in last_error:
+                    logger.warning(f"🔥 Model {current_model} is overloaded (503). Trying fallback if available...")
+                    continue
+                else:
+                    logger.error(f"❌ Gemini chat_reply failed on {current_model}: {e}")
+                    break
+        
+        return f"Error: {last_error}"
 
     # ------------- IMAGE -------------
 
@@ -204,7 +218,7 @@ class OpenAIProvider:
                 attempt += 1
                 
                 if time.time() - start_time > TOTAL_TIMEOUT:
-                    logger.warning("⏱️ Total timeout exceeded (120s). Aborting.")
+                    logger.warning(f"⏱️ Total timeout exceeded ({TOTAL_TIMEOUT}s). Aborting.")
                     return {"b64": None, "reason": "timeout"}
 
                 try:
@@ -213,26 +227,31 @@ class OpenAIProvider:
                     # Формируем итоговый промпт с явным указанием формата
                     # Это помогает модели лучше понять ожидаемый результат вместе с параметром aspect_ratio
                     full_user_prompt = f"{prompt}\n\nIMPORTANT: Use {aspect_ratio} aspect ratio for the output image."
-
+                    
+                    logger.info(f"📝 Full Prompt: {full_user_prompt}")
+                    
                     # Формируем конфиг
                     gen_config = types.GenerateContentConfig(
                         system_instruction=system_instruction,
                         safety_settings=safety_settings,
-                        http_options={'timeout': 180} # Ограничиваем время одного запроса к Google
                     )
                     
-                    # Если нашли соотношение сторон, добавляем в конфиг
-                    if aspect_ratio:
-                        gen_config.aspect_ratio = aspect_ratio
-
                     response = self._nano_client.models.generate_content(
                         model=model_name,
                         contents=[full_user_prompt, img],
                         config=gen_config
                     )
 
+                    if not response:
+                        logger.error(f"❌ No response object received from {model_name}")
+                        last_error = "no_response"
+                        time.sleep(1)
+                        continue
+
                     if not response.candidates:
                         logger.warning(f"⚠️ Пустой ответ от {model_name} (Safety filter?)")
+                        if hasattr(response, 'prompt_feedback'):
+                            logger.info(f"ℹ️ Prompt Feedback: {response.prompt_feedback}")
                         last_error = "safety_filter"
                         break 
 
