@@ -160,7 +160,9 @@ class OpenAIProvider:
             "CRITICAL REQUIREMENT: You MUST preserve the exact facial identity, structure, and features of the person from the source image. "
             "The output image must look exactly like the same person. Do not change eyes, nose, mouth, or jawline. "
             "Keep the skin tone consistent. High fidelity face swap.\n"
-            "If the user asks for multiple images or files, focus on creating ONE perfect image that follows the description."
+            "If the user asks for multiple images or files, focus on creating ONE perfect image that follows the description.\n"
+            "MANDATORY FORMATTING: The output image must be in the requested aspect ratio. "
+            "If no specific aspect ratio is mentioned, you MUST produce a vertical image in 9:16 aspect ratio."
         )
 
         # Конфиг безопасности
@@ -172,15 +174,28 @@ class OpenAIProvider:
         ]
         
         # Попытка извлечь соотношение сторон из промпта
-        aspect_ratio = None
-        # Ищем паттерны вида 16:9, 9:16, 4:3, 3:4, 1:1
+        aspect_ratio = "9:16"  # Дефолт: классическое вертикальное фото (как на приложенном фото)
+        
+        # 1. Поиск явных пропорций (16:9, 9:16, 4:3, 3:4, 1:1)
         ar_match = re.search(r'\b(16:9|9:16|4:3|3:4|1:1)\b', prompt)
         if ar_match:
             aspect_ratio = ar_match.group(1)
-            logger.info(f"📐 Detected aspect ratio in prompt: {aspect_ratio}")
+            logger.info(f"📐 Detected explicit aspect ratio in prompt: {aspect_ratio}")
+        else:
+            # 2. Поиск ключевых слов, если пропорции не указаны цифрами
+            # (Промпт к этому моменту уже переведен на английский в роутере)
+            p_lower = prompt.lower()
+            if "horizontal" in p_lower or "landscape" in p_lower or "широкое" in p_lower:
+                aspect_ratio = "16:9"
+            elif "square" in p_lower or "квадратное" in p_lower:
+                aspect_ratio = "1:1"
+            elif "vertical" in p_lower or "portrait" in p_lower or "вертикальное" in p_lower:
+                aspect_ratio = "9:16"
+            
+            logger.info(f"📐 Resulting aspect ratio: {aspect_ratio}")
 
         last_error = "unknown_error"
-        TOTAL_TIMEOUT = 120
+        TOTAL_TIMEOUT = 300 # Увеличиваем общий таймаут до 5 минут
         start_time = time.time()
         
         for model_name in models_to_try:
@@ -195,10 +210,15 @@ class OpenAIProvider:
                 try:
                     logger.info(f"🎨 GenAI Attempt ({model_name}). User Pro: {is_pro}. Attempt {attempt}...")
                     
+                    # Формируем итоговый промпт с явным указанием формата
+                    # Это помогает модели лучше понять ожидаемый результат вместе с параметром aspect_ratio
+                    full_user_prompt = f"{prompt}\n\nIMPORTANT: Use {aspect_ratio} aspect ratio for the output image."
+
                     # Формируем конфиг
                     gen_config = types.GenerateContentConfig(
                         system_instruction=system_instruction,
                         safety_settings=safety_settings,
+                        http_options={'timeout': 180} # Ограничиваем время одного запроса к Google
                     )
                     
                     # Если нашли соотношение сторон, добавляем в конфиг
@@ -207,7 +227,7 @@ class OpenAIProvider:
 
                     response = self._nano_client.models.generate_content(
                         model=model_name,
-                        contents=[prompt, img],
+                        contents=[full_user_prompt, img],
                         config=gen_config
                     )
 

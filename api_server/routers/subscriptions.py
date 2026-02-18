@@ -66,6 +66,11 @@ class SetPlanIn(BaseModel):
     plan: str
     price_cents: int | None = None
 
+class AdminGiveIn(BaseModel):
+    chat_id: int
+    days: int
+    generations: int
+
 @router.get("/summary/{chat_id}")
 def summary(chat_id: int, db: Session = Depends(get_db)):
     user = _get_or_create_user(db, chat_id)
@@ -211,4 +216,61 @@ async def resume(payload: dict, db: Session = Depends(get_db)):
     sub.cancel_at_period_end = False
     db.commit()
     
+    return {"ok": True}
+
+
+@router.post("/admin_give")
+def admin_give(payload: AdminGiveIn, db: Session = Depends(get_db)):
+    user = _get_or_create_user(db, payload.chat_id)
+    sub = _get_sub(db, user.id)
+    
+    now = _now()
+    end = now + timedelta(days=payload.days)
+    
+    if not sub:
+        sub = Subscription(user_id=user.id, plan="Admin", status="active", current_period_end=end)
+        db.add(sub)
+    else:
+        sub.plan = "Admin"
+        sub.status = "active"
+        sub.current_period_end = end
+        sub.cancel_at_period_end = True  # Админская выдача без автопродления
+        sub.cp_sub_id = None
+        
+    credits = _get_or_create_credits(db, user.id)
+    credits.img_limit_base = payload.generations
+    
+    # Если использовано больше, чем новый лимит — поднимаем лимит до уровня использованного,
+    # чтобы у пользователя было 0 доступных, но статистика сохранилась.
+    if (credits.web_queries or 0) > credits.img_limit_base:
+        credits.img_limit_base = credits.web_queries
+        
+    db.commit()
+    return {
+        "ok": True, 
+        "active_until": end.isoformat(), 
+        "generations": credits.img_limit_base,
+        "used": credits.web_queries or 0
+    }
+
+@router.post("/admin_cancel")
+def admin_cancel(payload: dict, db: Session = Depends(get_db)):
+    try:
+        chat_id = int(payload["chat_id"])
+    except:
+        raise HTTPException(400, "invalid chat_id")
+    
+    user = _get_or_create_user(db, chat_id)
+    sub = _get_sub(db, user.id)
+    
+    if sub:
+        db.delete(sub)
+    
+    credits = _get_or_create_credits(db, user.id)
+    credits.img_limit_base = 0
+    # Остальные лимиты тоже можно сбросить
+    credits.msg_limit_base = 0
+    credits.video_limit_base = 0
+    
+    db.commit()
     return {"ok": True}

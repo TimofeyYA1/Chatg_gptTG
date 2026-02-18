@@ -393,6 +393,61 @@ async def cmd_export_stats(message: Message):
         await status_msg.edit_text(f"❌ Ошибка: {e}")
 
 
+@router.message(Command("give_subscription"), F.from_user.id.in_(ADMIN_IDS))
+@router.message(Command("add_subscription"), F.from_user.id.in_(ADMIN_IDS))
+async def cmd_give_subscription(message: Message):
+    """
+    Выдача подписки админом: /give_subscription <telegram_id> <days> <generations>
+    """
+    args = message.text.split()
+    if len(args) < 4:
+        await message.answer("Использование: <code>/give_subscription &lt;telegram_id&gt; &lt;days&gt; &lt;generations&gt;</code>")
+        return
+
+    try:
+        target_id = int(args[1])
+        days = int(args[2])
+        gens = int(args[3])
+    except ValueError:
+        await message.answer("❌ Ошибка: ID, дни и генерации должны быть числами.")
+        return
+
+    res = await api_client.admin_give_sub(target_id, days, gens)
+    if res.get("ok"):
+        until_str = _format_ru_date(res.get("active_until"))
+        await message.answer(
+            f"✅ <b>Подписка выдана!</b>\n\n"
+            f"👤 ID: <code>{target_id}</code>\n"
+            f"⏳ Срок: {days} дн. (до {until_str})\n"
+            f"✨ Лимит: {res.get('generations')} (использовано: {res.get('used')})"
+        )
+    else:
+        await message.answer(f"❌ <b>Ошибка API:</b>\n{res.get('error')}")
+
+
+@router.message(Command("reset_subscription"), F.from_user.id.in_(ADMIN_IDS))
+@router.message(Command("cancel_subscription"), F.from_user.id.in_(ADMIN_IDS))
+async def cmd_reset_subscription(message: Message):
+    """
+    Сброс подписки админом: /reset_subscription <telegram_id>
+    """
+    args = message.text.split()
+    if len(args) < 2:
+        await message.answer("Использование: <code>/reset_subscription &lt;telegram_id&gt;</code>")
+        return
+
+    try:
+        target_id = int(args[1])
+    except ValueError:
+        await message.answer("❌ Ошибка: ID должен быть числом.")
+        return
+
+    res = await api_client.admin_cancel_sub(target_id)
+    if res.get("ok"):
+        await message.answer(f"✅ Подписка пользователя <code>{target_id}</code> успешно аннулирована.")
+    else:
+        await message.answer(f"❌ <b>Ошибка API:</b>\n{res.get('error')}")
+
 
 @router.message(F.photo, F.caption)
 async def handle_photo_with_prompt(message: Message, state: FSMContext):

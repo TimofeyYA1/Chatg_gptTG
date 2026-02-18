@@ -202,6 +202,28 @@ async def cancel_plan(chat_id: int) -> Dict[str, Any]:
         return {"ok": True}
 
 
+async def admin_give_sub(chat_id: int, days: int, generations: int) -> Dict[str, Any]:
+    payload = {"chat_id": chat_id, "days": days, "generations": generations}
+    async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+        r = await client.post(f"{API_BASE}/subscriptions/admin_give", json=payload)
+    
+    cache_invalidate(chat_id)
+    if r.status_code != 200:
+        return {"ok": False, "error": r.text}
+    return r.json()
+
+
+async def admin_cancel_sub(chat_id: int) -> Dict[str, Any]:
+    payload = {"chat_id": chat_id}
+    async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+        r = await client.post(f"{API_BASE}/subscriptions/admin_cancel", json=payload)
+    
+    cache_invalidate(chat_id)
+    if r.status_code != 200:
+        return {"ok": False, "error": r.text}
+    return r.json()
+
+
 # --- Image Generation/Editing ---
 
 async def edit_image(chat_id: int, prompt: str, image_b64: str) -> Dict[str, Any]:
@@ -211,8 +233,8 @@ async def edit_image(chat_id: int, prompt: str, image_b64: str) -> Dict[str, Any
         "image_b64": image_b64,
         "size": "768x768"
     }
-    # Используем увеличенный таймаут специально для генерации
-    timeout = httpx.Timeout(connect=10.0, read=180.0, write=10.0, pool=5.0)
+    # Используем увеличенный таймаут специально для генерации (5 минут)
+    timeout = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=5.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         r = await client.post(f"{API_BASE}/image/edit", json=payload)
     if r.status_code != 200:
@@ -228,8 +250,8 @@ async def generate_from_catalog(chat_id: int, image_b64: str, gender: str, edito
         "editor_sel": editor_sel,
         "shoot_sel": shoot_sel
     }
-    # Используем увеличенный таймаут специально для генерации
-    timeout = httpx.Timeout(connect=10.0, read=180.0, write=10.0, pool=5.0)
+    # Используем увеличенный таймаут специально для генерации (5 минут)
+    timeout = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=5.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         r = await client.post(f"{API_BASE}/image/generate_from_catalog", json=payload)
     if r.status_code != 200:
