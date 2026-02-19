@@ -64,7 +64,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("NANOBANANA_MODEL_IMAGE", "nanobanana_model_image"),
     )
     
-    # FALLBACK MODEL (Для STD аккаунтов и как запасная для PRO) -> gemini-2.0-flash-exp
+    # FALLBACK MODEL (Для STD аккаунтов и как запасная для PRO) -> gemini-2.5-flash-image
     NANOBANANA_MODEL_IMAGE_FALLBACK: str = Field(
         "gemini-2.5-flash-image",
         validation_alias=AliasChoices("NANOBANANA_MODEL_IMAGE_FALLBACK", "nanobanana_model_image_fallback"),

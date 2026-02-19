@@ -287,11 +287,11 @@ def edit_image(data: ImageEditIn, db: Session = Depends(get_db)):
     )
     
     try:
-        # Используем Gemini 3 Flash Preview (или актуальный аналог Flash для перевода)
+        # Используем gemini-2.5-pro для перевода
         translated_prompt = provider.nano_chat_reply(
             system_prompt=translator_system, 
             user_prompt=raw_prompt,
-            model_name="gemini-3-flash-preview"# Самая быстрая и современная Flash-модель
+            model_name="gemini-2.5-pro"
         )
         if not translated_prompt or "Error" in translated_prompt:
             translated_prompt = raw_prompt
