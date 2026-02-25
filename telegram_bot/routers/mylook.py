@@ -141,6 +141,56 @@ async def _get_status_text(editor_sel: dict, gender: str) -> str:
         lines.append(f"- {cat_name}: {item_name}")
     return "\n".join(lines) + "\n\n"
 
+
+def _prompt_source_caption() -> str:
+    return (
+        "📸 Фото загружено\n\n"
+        "Как будем генерировать?"
+    )
+
+def _promo_user_label(entry: dict) -> str:
+    chat_id = entry.get("chat_id")
+    username = str(entry.get("username") or "").strip().lstrip("@")
+    if username:
+        return f"@{html.quote(username)}"
+    if chat_id is not None:
+        return f"<code>{chat_id}</code>"
+    return "<code>unknown</code>"
+
+
+def _promo_users_line(prefix: str, users: list[dict], truncated: bool, total: int) -> str:
+    if not users:
+        return f"{prefix}: -"
+    labels = ", ".join(_promo_user_label(u) for u in users)
+    if truncated and total > len(users):
+        labels += f" (+{total - len(users)})"
+    return f"{prefix}: {labels}"
+
+
+async def _answer_html_chunks(message: Message, lines: list[str], max_len: int = 3900) -> None:
+    chunk = ""
+    for line in lines:
+        candidate = f"{chunk}\n{line}" if chunk else line
+        if len(candidate) <= max_len:
+            chunk = candidate
+            continue
+
+        if chunk:
+            await message.answer(chunk, disable_web_page_preview=True)
+
+        if len(line) <= max_len:
+            chunk = line
+            continue
+
+        start = 0
+        while start < len(line):
+            await message.answer(line[start:start + max_len], disable_web_page_preview=True)
+            start += max_len
+        chunk = ""
+
+    if chunk:
+        await message.answer(chunk, disable_web_page_preview=True)
+
 # --- PANEL HELPERS (MOVED UP FOR SCOPE VISIBILITY) ---
 
 async def panel_send(message: Message | CallbackQuery, state: FSMContext, img_path: str, caption: str, kb=None) -> None:
@@ -286,20 +336,37 @@ async def start(message: Message, state: FSMContext) -> None:
     # Обработка промо-ссылок
     command_parts = message.text.split()
     if len(command_parts) > 1:
-        token = command_parts[1]
-        res = await api_client.use_promo(message.chat.id, token)
-        if res.get("ok"):
-            credits = res.get("credits_added", 10)
-            await message.answer(f"🎁 <b>Поздравляем!</b>\nВам начислено {credits} бесплатных генераций по пригласительной ссылке!")
-        else:
-            err = res.get("error")
-            if err == "token_already_used":
-                await message.answer("⚠️ Эта ссылка уже была использована.")
-            elif err == "already_had_subscription":
-                await message.answer("⚠️ Простите, эта ссылка только для новых пользователей, которые еще не покупали подписку.")
-            elif err == "promo_already_used_by_user":
-                await message.answer("⚠️ Вы уже активировали подобную ссылку ранее. Повторная активация невозможна.")
-            # Если token_not_found — возможно это другой тип ссылки, просто игнорируем или логируем
+        token = command_parts[1].strip()
+        if token:
+            should_try_promo = True
+
+            # Отдельные трекинг-ссылки (без бонусов).
+            if token.startswith("trk_"):
+                should_try_promo = False
+                track_res = await api_client.register_track_click(message.chat.id, token)
+                if not track_res.get("ok"):
+                    # Фоллбэк на случай коллизии префикса со старым промо-токеном.
+                    if track_res.get("error") == "token_not_found":
+                        should_try_promo = True
+                    else:
+                        logger.warning(f"Track link click register failed: token={token} err={track_res.get('error')}")
+
+            if should_try_promo:
+                res = await api_client.use_promo(message.chat.id, token)
+                if res.get("ok"):
+                    credits = res.get("credits_added", 50)
+                    await message.answer(f"🎁 <b>Поздравляем!</b>\nВам начислено {credits} бесплатных генераций по пригласительной ссылке!")
+                else:
+                    err = res.get("error")
+                    if err == "token_already_used":
+                        await message.answer("⚠️ Эта ссылка уже была использована.")
+                    elif err == "token_fully_used":
+                        await message.answer("⚠️ Эта ссылка уже исчерпала лимит активаций.")
+                    elif err == "already_had_subscription":
+                        await message.answer("⚠️ Простите, эта ссылка только для новых пользователей, которые еще не покупали подписку.")
+                    elif err == "promo_already_used_by_user":
+                        await message.answer("⚠️ Вы уже активировали подобную ссылку ранее. Повторная активация невозможна.")
+                    # token_not_found: это может быть внешняя/неизвестная ссылка, игнорируем.
 
     await api_client.ensure_user(message.chat.id)
     
@@ -340,32 +407,238 @@ async def cmd_update_prompts(message: Message):
     
 @router.message(Command("gen"))
 async def cmd_gen_promo(message: Message):
-    if message.from_user.id not in ADMIN_IDS: return
+    if message.from_user.id not in ADMIN_IDS:
+        return
 
     args = message.text.split()
     count = 1
-    if len(args) > 1 and args[1].isdigit():
-        count = int(args[1])
-    
-    if count > 50:
-        await message.answer("Максимум 50 за раз.")
+    credits = 50
+    max_uses = 1
+
+    if len(args) > 4:
+        await message.answer("Использование: <code>/gen [count] [generations=50] [max_uses=1]</code>")
         return
 
-    res = await api_client.generate_promo(count=count, credits=10)
+    try:
+        if len(args) > 1:
+            count = int(args[1])
+        if len(args) > 2:
+            credits = int(args[2])
+        if len(args) > 3:
+            max_uses = int(args[3])
+    except ValueError:
+        await message.answer("Ошибка: count, generations и max_uses должны быть числами.")
+        return
+
+    if count < 1 or count > 50:
+        await message.answer("Максимум 50 ссылок за один запрос.")
+        return
+    if credits < 1 or credits > 100000:
+        await message.answer("Генераций на ссылку: от 1 до 100000.")
+        return
+    if max_uses < 1 or max_uses > 100000:
+        await message.answer("Лимит активаций на код: от 1 до 100000.")
+        return
+
+    res = await api_client.generate_promo(count=count, credits=credits, max_uses=max_uses)
+
     if res.get("ok"):
         tokens = res.get("tokens", [])
+        if not tokens:
+            await message.answer("API не вернуло ни одной ссылки.")
+            return
+
         bot_info = await message.bot.get_me()
         lines = []
         for i, t in enumerate(tokens, 1):
             link = f"https://t.me/{bot_info.username}?start={t}"
             lines.append(f"{i}. {link}")
-        
+
         await message.answer(
-            f"✅ <b>Сгенерировано ссылок: {len(tokens)}</b>\n\n" + "\n".join(lines),
-            disable_web_page_preview=True
+            f"✅ <b>Сгенерировано ссылок: {len(tokens)}</b>\n"
+            f"Генераций по ссылке: {credits}\n"
+            f"Лимит активаций на код: {max_uses}\n\n" + "\n".join(lines),
+            disable_web_page_preview=True,
         )
     else:
         await message.answer(f"❌ <b>Ошибка API:</b>\n{res.get('error')}")
+
+
+@router.message(Command("promo_stats"))
+async def cmd_promo_stats(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+
+    stats = await api_client.get_promo_stats()
+    promos = await api_client.get_promo_list(limit=20, include_users=True, users_limit=8)
+
+    if not stats and not promos:
+        await message.answer("❌ Не удалось получить статистику промокодов.")
+        return
+
+    total_tokens = stats.get("total_tokens_created", 0)
+    total_redemptions = stats.get("total_redemptions", 0)
+    total_unique_users = stats.get("total_unique_users", total_redemptions)
+    total_converted = stats.get("total_conversions_to_sub", 0)
+    total_not_converted = stats.get("total_without_subscription", max(0, total_unique_users - total_converted))
+    conversion_rate = stats.get("conversion_rate_percent", 0)
+    total_credits_granted = stats.get("total_credits_granted", 0)
+
+    lines: list[str] = [
+        "📊 <b>Статистика промокодов</b>",
+        "",
+        f"Всего создано кодов: {total_tokens}",
+        f"Всего активаций: {total_redemptions}",
+        f"Уникальных пользователей: {total_unique_users}",
+        f"Купили подписку после промо: {total_converted}",
+        f"Не купили подписку: {total_not_converted}",
+        f"Конверсия: {conversion_rate}%",
+        f"Выдано генераций по промо: {total_credits_granted}",
+        "",
+        "<b>Последние 20 кодов</b>",
+        "<code>Код..     | Ген. | Исп.  | Купил/Нет</code>",
+    ]
+
+    for p in promos:
+        token_full = p.get("token", "???")
+        code_short = token_full[:8]
+        credits = p.get("credits", 0)
+        current = p.get("current_uses", 0)
+        max_uses = p.get("max_uses", 1)
+        buyers = p.get("converted_subs", 0)
+        non_buyers = p.get("not_converted_subs", max(0, current - buyers))
+        lines.append(f"<code>{code_short}.. | {credits:<4} | {current:>2}/{max_uses:<2} | {buyers}/{non_buyers}</code>")
+
+    detail_promos = [p for p in promos if (p.get("buyers") or p.get("non_buyers"))]
+    if detail_promos:
+        lines.append("")
+        lines.append("<b>Кто купил / не купил</b>")
+
+    for idx, p in enumerate(detail_promos, 1):
+        token_full = p.get("token", "")
+        code_short = html.quote((token_full[:10] + "...") if token_full else "unknown")
+
+        buyers = p.get("buyers", [])
+        non_buyers = p.get("non_buyers", [])
+        buyers_total = int(p.get("buyers_total", len(buyers)))
+        non_buyers_total = int(p.get("non_buyers_total", len(non_buyers)))
+
+        lines.append(f"{idx}. <code>{code_short}</code>")
+        lines.append(_promo_users_line("✅ Купили", buyers, bool(p.get("buyers_truncated")), buyers_total))
+        lines.append(_promo_users_line("❌ Не купили", non_buyers, bool(p.get("non_buyers_truncated")), non_buyers_total))
+        lines.append("")
+
+    await _answer_html_chunks(message, lines)
+
+
+@router.message(Command("gen_track"))
+async def cmd_gen_track(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+
+    args = message.text.split()
+    if len(args) > 2:
+        await message.answer("Использование: <code>/gen_track [count=1]</code>")
+        return
+
+    count = 1
+    if len(args) > 1:
+        try:
+            count = int(args[1])
+        except ValueError:
+            await message.answer("Ошибка: count должен быть числом.")
+            return
+
+    if count < 1 or count > 50:
+        await message.answer("Максимум 50 ссылок за один запрос.")
+        return
+
+    res = await api_client.generate_track_links(count=count)
+    if not res.get("ok"):
+        await message.answer(f"❌ <b>Ошибка API:</b>\n{res.get('error')}")
+        return
+
+    tokens = res.get("tokens", [])
+    if not tokens:
+        await message.answer("API не вернуло ни одной ссылки.")
+        return
+
+    bot_info = await message.bot.get_me()
+    lines = []
+    for i, token in enumerate(tokens, 1):
+        link = f"https://t.me/{bot_info.username}?start={token}"
+        lines.append(f"{i}. {link}")
+
+    await message.answer(
+        f"✅ <b>Сгенерировано трекинг-ссылок: {len(tokens)}</b>\n"
+        f"Лимит активаций: без ограничений\n\n" + "\n".join(lines),
+        disable_web_page_preview=True,
+    )
+
+
+@router.message(Command("track_stats"))
+async def cmd_track_stats(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+
+    stats = await api_client.get_track_stats()
+    links = await api_client.get_track_links(limit=20, include_users=True, users_limit=8)
+
+    if not stats and not links:
+        await message.answer("❌ Не удалось получить статистику трекинг-ссылок.")
+        return
+
+    total_links = stats.get("total_links_created", 0)
+    total_clicks = stats.get("total_clicks", 0)
+    total_unique_users = stats.get("total_unique_users", total_clicks)
+    total_converted = stats.get("total_conversions_to_sub", 0)
+    total_not_converted = stats.get("total_without_subscription", max(0, total_unique_users - total_converted))
+    conversion_rate = stats.get("conversion_rate_percent", 0)
+
+    lines: list[str] = [
+        "📈 <b>Статистика трекинг-ссылок</b>",
+        "",
+        f"Всего создано ссылок: {total_links}",
+        f"Всего кликов: {total_clicks}",
+        f"Уникальных пользователей: {total_unique_users}",
+        f"Купили подписку после перехода: {total_converted}",
+        f"Не купили подписку: {total_not_converted}",
+        f"Конверсия: {conversion_rate}%",
+        "",
+        "<b>Последние 20 ссылок</b>",
+        "<code>Код..     | Клики | Уник. | Купил/Нет</code>",
+    ]
+
+    for item in links:
+        token_full = item.get("token", "???")
+        token_short = token_full[:8]
+        clicks = item.get("total_clicks", 0)
+        unique_users = item.get("unique_users", 0)
+        buyers = item.get("converted_subs", 0)
+        non_buyers = item.get("not_converted_subs", max(0, unique_users - buyers))
+        lines.append(f"<code>{token_short}.. | {clicks:<5} | {unique_users:<5} | {buyers}/{non_buyers}</code>")
+
+    detail_links = [item for item in links if (item.get("buyers") or item.get("non_buyers"))]
+    if detail_links:
+        lines.append("")
+        lines.append("<b>Кто купил / не купил</b>")
+
+    for idx, item in enumerate(detail_links, 1):
+        token_full = item.get("token", "")
+        token_short = html.quote((token_full[:10] + "...") if token_full else "unknown")
+
+        buyers = item.get("buyers", [])
+        non_buyers = item.get("non_buyers", [])
+        buyers_total = int(item.get("buyers_total", len(buyers)))
+        non_buyers_total = int(item.get("non_buyers_total", len(non_buyers)))
+
+        lines.append(f"{idx}. <code>{token_short}</code>")
+        lines.append(_promo_users_line("✅ Купили", buyers, bool(item.get("buyers_truncated")), buyers_total))
+        lines.append(_promo_users_line("❌ Не купили", non_buyers, bool(item.get("non_buyers_truncated")), non_buyers_total))
+        lines.append("")
+
+    await _answer_html_chunks(message, lines)
+
 
 @router.message(Command("export"))
 async def cmd_export_stats(message: Message):
@@ -935,12 +1208,14 @@ async def got_document_photo(message: Message, state: FSMContext) -> None:
     await _after_photo_received(message, state)
 
 async def _after_photo_received(message: Message, state: FSMContext):
-    await state.set_state(Flow.choosing_gender)
+    await state.set_state(Flow.waiting_custom_prompt)
+    await state.update_data(editor_sel={}, shoot_sel={})
     await panel_send(
-        message, state,
-        img_ui("gender"),
-        caption="Выберите пол для корректного применения стилей:",
-        kb=ui.kb_gender_or_prompt("ru"),
+        message,
+        state,
+        img_path="",
+        caption=_prompt_source_caption(),
+        kb=ui.kb_prompt_source("ru"),
     )
 
 @router.callback_query(F.data.in_({ui.CB_STYLES_M, ui.CB_STYLES_F}))
@@ -961,8 +1236,8 @@ async def choose_gender(call: CallbackQuery, state: FSMContext) -> None:
 async def back_to_gender(call: CallbackQuery, state: FSMContext) -> None:
     if not await has_generations_async(call.from_user.id):
         await call.answer("Нужна подписка", show_alert=True); return
-    await state.set_state(Flow.choosing_gender)
-    await panel_edit_media(call, state, img_ui("gender"), "Выберите пол для корректного применения стилей:", ui.kb_gender_or_prompt("ru"))
+    await state.set_state(Flow.waiting_custom_prompt)
+    await panel_send(call.message, state, img_path="", caption=_prompt_source_caption(), kb=ui.kb_prompt_source("ru"))
     await call.answer()
 
 @router.callback_query(F.data == ui.CB_CUSTOM_PROMPT)
@@ -970,12 +1245,18 @@ async def custom_prompt_click(call: CallbackQuery, state: FSMContext) -> None:
     if not await has_generations_async(call.from_user.id):
         # ПЕЙВОЛЛ -> compare
         path = img_ui("compare")
-        await panel_edit_media(call, state, path, ui.TEXT_TIER_SELECTION, ui.kb_tier_selection())
+        await panel_send(call.message, state, path, ui.TEXT_TIER_SELECTION, ui.kb_tier_selection())
         await call.answer()
         return
     
     await state.set_state(Flow.waiting_custom_prompt)
-    await panel_edit_media(call, state, img_ui("gender"), "✍️ <b>Напишите свой запрос.</b>\n\n...", ui.kb_back_to_gender("ru"))
+    await panel_send(
+        call.message,
+        state,
+        img_path="",
+        caption="✍️ <b>Вставьте свой промпт одним сообщением.</b>",
+        kb=ui.kb_back_to_gender("ru"),
+    )
     await call.answer()
 
 @router.message(Flow.waiting_custom_prompt)
@@ -1218,7 +1499,13 @@ async def _process_generation(message: Message, state: FSMContext, prompt: str =
             res_b64 = res.get("b64")
             if res_b64:
                 file_bytes = base64.b64decode(res_b64)
-                input_file = BufferedInputFile(file_bytes, filename="result.jpg")
+                image_ext = str(res.get("image_ext") or "jpg").lower()
+                if image_ext == "jpeg":
+                    image_ext = "jpg"
+                if image_ext not in {"jpg", "png", "webp"}:
+                    image_ext = "jpg"
+
+                input_file = BufferedInputFile(file_bytes, filename=f"result.{image_ext}")
                 
                 # --- ЛОГИКА ПОДПИСИ ДЛЯ БЕСПЛАТНЫХ ЮЗЕРОВ ---
                 summary = await api_client.get_sub_summary(message.chat.id)
@@ -1237,8 +1524,8 @@ async def _process_generation(message: Message, state: FSMContext, prompt: str =
                     except TelegramBadRequest:
                         await message.answer_photo(input_file, caption=final_caption, reply_markup=ui.kb_result_actions("ru"))
                 
-                await state.update_data(last_result_b64=res_b64)
-                doc_file = BufferedInputFile(file_bytes, filename="facelab_result.jpg")
+                await state.update_data(last_result_b64=res_b64, last_result_ext=image_ext)
+                doc_file = BufferedInputFile(file_bytes, filename=f"facelab_result.{image_ext}")
                 await message.answer_document(doc_file)
 
             else:
@@ -1250,8 +1537,8 @@ async def _process_generation(message: Message, state: FSMContext, prompt: str =
                     "safety_filter": "🔞 <b>Нейросеть заблокировала генерацию.</b>\nПохоже, фото содержит лицо, которое алгоритмы Google сочли небезопасным (Safety Filter). Попробуйте другое фото или менее вызывающий стиль.",
                     "model_refusal": "🤖 Нейросеть отказалась обрабатывать этот запрос.",
                     "limit_exceeded": "⏳ Сервер перегружен запросами к нейросети. Попробуйте через минуту.",
-                    "timeout": "⏳ <b>Нейросеть не ответила вовремя.</b>\nСервер сильно загружен. Пожалуйста, попробуйте еще раз через пару минут.",
-                    "server_overloaded": "🔥 <b>Сервер перегружен.</b>\nСлишком много запросов прямо сейчас. Подождите минутку.",
+                    "timeout": "⚡️ Сейчас модель временно перегружена.\nПожалуйста, попробуйте повторить генерацию немного позже.",
+                    "server_overloaded": "⚡️ Сейчас модель временно перегружена.\nПожалуйста, попробуйте повторить генерацию немного позже.",
                     "api_error": "🛠 Внутренняя ошибка нейросети. Попробуйте еще раз.",
                     "invalid_image_file": "❌ Не удалось прочитать файл изображения.",
                     "unknown": "⚠️ Не удалось сгенерировать изображение по техническим причинам."
@@ -1294,11 +1581,19 @@ async def _process_generation(message: Message, state: FSMContext, prompt: str =
 async def on_save_file(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     b64_data = data.get("last_result_b64")
+    result_ext = str(data.get("last_result_ext") or "jpg").lower()
+    if result_ext == "jpeg":
+        result_ext = "jpg"
+    if result_ext not in {"jpg", "png", "webp"}:
+        result_ext = "jpg"
     if not b64_data: await call.answer("Файл устарел", show_alert=True); return
     await call.answer("Отправляю...")
     try:
         file_bytes = base64.b64decode(b64_data)
-        await call.message.answer_document(BufferedInputFile(file_bytes, filename="facelab_result.jpg"), caption="Вот ваш файл 💾")
+        await call.message.answer_document(
+            BufferedInputFile(file_bytes, filename=f"facelab_result.{result_ext}"),
+            caption="Вот ваш файл 💾",
+        )
     except Exception: await call.answer("Ошибка отправки", show_alert=True)
 
 @router.callback_query(F.data == ui.CB_GEN_SAME_PHOTO)
@@ -1349,3 +1644,5 @@ async def on_gen_new_photo(call: CallbackQuery, state: FSMContext):
     # Отправляем сообщение-просьбу
     await call.message.answer(ui.TEXTS["ru"]["new_photo_req"])
     await call.answer()
+
+

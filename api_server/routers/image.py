@@ -36,13 +36,13 @@ PRESERVE_BACKGROUND_INSTRUCTION = (
 class ImageIn(BaseModel):
     chat_id: int
     prompt: str
-    size: str | None = "768x768"
+    size: str | None = "1536x1536"
 
 class ImageEditIn(BaseModel):
     chat_id: int
     prompt: str
     image_b64: str
-    size: str | None = "768x768"
+    size: str | None = "1536x1536"
 
 class CatalogGenIn(BaseModel):
     chat_id: int
@@ -230,14 +230,27 @@ def generate_from_catalog(data: CatalogGenIn, db: Session = Depends(get_db)):
     provider = OpenAIProvider()
     # ПЕРЕДАЕМ is_pro ФЛАГ
     logger.info(f"🎨 Starting generation for user {data.chat_id} (Pro: {is_pro_user})")
-    result = provider.edit_image_b64(raw_image, final_prompt, size="768x768", is_pro=is_pro_user)
+    result = provider.edit_image_b64(raw_image, final_prompt, size="1536x1536", is_pro=is_pro_user)
     
     b64 = result.get("b64")
+    image_ext = str(result.get("image_ext") or "jpg").lower()
+    if image_ext == "jpeg":
+        image_ext = "jpg"
+    if image_ext not in {"jpg", "png", "webp"}:
+        image_ext = "jpg"
     fail_reason = result.get("reason", "unknown")
 
     if not b64:
         _rollback_limit(db, user)
-        caption_text = "⚠️ Не удалось сгенерировать изображение."
+        
+        # Определяем текст ошибки для пользователя
+        if fail_reason == "server_overloaded" or fail_reason == "timeout":
+            caption_text = "⚡️ Сейчас модель временно перегружена.\nПожалуйста, попробуйте повторить генерацию немного позже."
+        elif fail_reason == "safety_filter":
+            caption_text = "⚠️ Отредактируйте промпт: он не прошел фильтр безопасности."
+        else:
+            caption_text = "⚠️ Не удалось сгенерировать изображение."
+
         logger.warning(f"❌ Generation from catalog failed for user {data.chat_id} | Reason: {fail_reason} | Prompt: {final_prompt}")
         return {
             "ok": True, 
@@ -246,7 +259,7 @@ def generate_from_catalog(data: CatalogGenIn, db: Session = Depends(get_db)):
             "fail_reason": fail_reason
         }
 
-    return {"ok": True, "stub": False, "b64": b64, "caption": "✨ Готово!"}
+    return {"ok": True, "stub": False, "b64": b64, "caption": "✨ Готово!", "image_ext": image_ext}
 
 
 @router.post("/edit")
@@ -304,14 +317,27 @@ def edit_image(data: ImageEditIn, db: Session = Depends(get_db)):
 
     # ПЕРЕДАЕМ is_pro ФЛАГ и переведенный промпт
     logger.info(f"🎨 Starting custom edit for user {data.chat_id} (Pro: {is_pro_user})")
-    result = provider.edit_image_b64(raw_image, translated_prompt, size=data.size or "768x768", is_pro=is_pro_user)
+    result = provider.edit_image_b64(raw_image, translated_prompt, size=data.size or "1536x1536", is_pro=is_pro_user)
     
     b64_str = result.get("b64")
+    image_ext = str(result.get("image_ext") or "jpg").lower()
+    if image_ext == "jpeg":
+        image_ext = "jpg"
+    if image_ext not in {"jpg", "png", "webp"}:
+        image_ext = "jpg"
     fail_reason = result.get("reason", "unknown")
 
     if not b64_str:
         _rollback_limit(db, user)
-        caption_text = "⚠️ Не удалось сгенерировать изображение."
+
+        # Определяем текст ошибки для пользователя
+        if fail_reason == "server_overloaded" or fail_reason == "timeout":
+            caption_text = "⚡️ Сейчас модель временно перегружена.\nПожалуйста, попробуйте повторить генерацию немного позже."
+        elif fail_reason == "safety_filter":
+            caption_text = "⚠️ Отредактируйте промпт: он не прошел фильтр безопасности."
+        else:
+            caption_text = "⚠️ Не удалось сгенерировать изображение."
+
         logger.warning(f"❌ Generation failed for user {data.chat_id} | Reason: {fail_reason} | Prompt: {data.prompt}")
         return {
             "ok": True, 
@@ -320,4 +346,4 @@ def edit_image(data: ImageEditIn, db: Session = Depends(get_db)):
             "fail_reason": fail_reason 
         }
 
-    return {"ok": True, "stub": False, "b64": b64_str, "caption": "✨ Готово!"}
+    return {"ok": True, "stub": False, "b64": b64_str, "caption": "✨ Готово!", "image_ext": image_ext}

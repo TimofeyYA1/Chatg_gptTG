@@ -32,6 +32,7 @@ def img_ui(name: str) -> str:
 
 LINK_USER_AGREEMENT = "https://docs.google.com/document/d/e/2PACX-1vSk-6MJ0-J-Q0li06vMRvGLC0YOYszxxLSUpGj3qCn4a9EpMJ0fLYpBYGbZCNbNTyP498wBCNkcEBEf/pub"
 LINK_RECURRING_RULES = "https://docs.google.com/document/d/e/2PACX-1vQq270OfXzscST6ppkbOFYu7Qni6hw7PiHp_-Tj6bhcS8U7uD4HlBMLxwgM3V0BUIMf0izCFbMM4ZW3/pub"
+LINK_TREND_PROMPTS = "https://t.me/milana_prompts"
 # ---------- NAMES & TITLES ----------
 
 CATALOG_NAMES = {
@@ -310,6 +311,22 @@ def kb_gender_or_prompt(lang: str = "ru") -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text=a, callback_data=CB_STYLES_M),
              InlineKeyboardButton(text=b, callback_data=CB_STYLES_F)],
             [InlineKeyboardButton(text=c, callback_data=CB_CUSTOM_PROMPT)],
+        ]
+    )
+
+
+def kb_prompt_source(lang: str = "ru") -> InlineKeyboardMarkup:
+    if lang == "ru":
+        trend_text = "🔥 Взять трендовый промпт"
+        custom_text = "✍️ Вставить свой промпт"
+    else:
+        trend_text = "🔥 Use trending prompt"
+        custom_text = "✍️ Paste custom prompt"
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=trend_text, url=LINK_TREND_PROMPTS)],
+            [InlineKeyboardButton(text=custom_text, callback_data=CB_CUSTOM_PROMPT)],
         ]
     )
 

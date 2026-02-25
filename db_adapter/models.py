@@ -207,14 +207,83 @@ class PromoToken(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    credits: Mapped[int] = mapped_column(Integer, default=10)
+    credits: Mapped[int] = mapped_column(Integer, default=50)
+    
+    # Legacy / Single-use logic
     is_used: Mapped[bool] = mapped_column(Boolean, default=False)
     used_by_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+
+    # Multi-use logic
+    max_uses: Mapped[int] = mapped_column(Integer, default=1)
+    current_uses: Mapped[int] = mapped_column(Integer, default=0)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+    usages: Mapped[list["PromoUsage"]] = relationship(
+        "PromoUsage",
+        back_populates="token",
+        cascade="all, delete-orphan",
+    )
+
+
+class PromoUsage(Base):
+    __tablename__ = "promo_usages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token_id: Mapped[int] = mapped_column(
+        ForeignKey("promo_tokens.id", ondelete="CASCADE"),
+        index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True
+    )
+    used_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    token: Mapped["PromoToken"] = relationship("PromoToken", back_populates="usages")
+    user: Mapped["User"] = relationship("User")
+
+
+class TrackLink(Base):
+    __tablename__ = "track_links"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    clicks: Mapped[list["TrackLinkClick"]] = relationship(
+        "TrackLinkClick",
+        back_populates="link",
+        cascade="all, delete-orphan",
+    )
+
+
+class TrackLinkClick(Base):
+    __tablename__ = "track_link_clicks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    link_id: Mapped[int] = mapped_column(
+        ForeignKey("track_links.id", ondelete="CASCADE"),
+        index=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
+    )
+    clicked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    link: Mapped["TrackLink"] = relationship("TrackLink", back_populates="clicks")
+    user: Mapped["User"] = relationship("User")
 
 
 # -------------------- CATALOG (EDITOR & SHOOTS) --------------------

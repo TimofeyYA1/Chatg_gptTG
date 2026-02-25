@@ -9,7 +9,10 @@ ENV_FILE = (Path(__file__).resolve().parents[1] / ".env").as_posix()
 class Settings(BaseSettings):
     # --- базовые ---
     APP_NAME: str = "AI SuperBot API"
+    APP_ENV: str = "development"
     ALLOWED_ORIGINS: str = "*"
+    API_EXPOSE_DOCS: bool = False
+    INTERNAL_API_TOKEN: str = Field("", validation_alias=AliasChoices("INTERNAL_API_TOKEN", "internal_api_token"))
     
     # Публичный URL API
     API_PUBLIC_URL: str = Field("http://localhost:8000", validation_alias=AliasChoices("API_PUBLIC_URL", "api_public_url"))

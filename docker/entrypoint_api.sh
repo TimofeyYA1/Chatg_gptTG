@@ -21,6 +21,9 @@ PY
 echo "[api] Creating tables if not exist…"
 python -m db_adapter.create_tables || true
 
+echo "[api] Running DB migrations..."
+python -m db_adapter.migrate
+
 echo "[api] Syncing catalog from JSON..."
 python sync_catalog.py
 
