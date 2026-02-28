@@ -5,7 +5,6 @@ import logging
 import io
 import base64
 import time
-import os
 import re
 
 from openai import OpenAI
@@ -68,12 +67,34 @@ class OpenAIProvider:
         markers = ("4.1", "gpt-5", "o3", "o4")
         return any(m in model for m in markers)
 
+    @staticmethod
+    def _history_to_plaintext(history: List[Dict[str, str]], user_prompt: str) -> str:
+        lines: list[str] = []
+        for item in history:
+            role = (item.get("role") or "user").strip()
+            content = (item.get("content") or "").strip()
+            if content:
+                lines.append(f"{role}: {content}")
+        lines.append(f"user: {user_prompt}")
+        return "\n".join(lines)
+
     def chat_reply(self, history: List[Dict[str, str]], user_prompt: str) -> str:
         text = (user_prompt or "").strip()
         if not text:
             return "🤖 Сообщение пустое."
 
         if not self.enabled():
+            if self._nano_enabled():
+                tail = history[-settings.OPENAI_CONTEXT_MESSAGES:] if history else []
+                fallback_input = self._history_to_plaintext(tail, text)
+                fallback_reply = self.nano_chat_reply(
+                    system_prompt="You are a helpful assistant. Use conversation history if provided and answer clearly.",
+                    user_prompt=fallback_input,
+                )
+                if fallback_reply and not fallback_reply.startswith("Error:"):
+                    return fallback_reply.strip()
+                logger.warning("Gemini chat fallback failed: %s", fallback_reply)
+                return "🤖 Ошибка нейросети."
             return f"🤖 (симуляция) Я получил: {text}"
 
         tail = history[-settings.OPENAI_CONTEXT_MESSAGES:] if history else []
@@ -94,29 +115,36 @@ class OpenAIProvider:
             return (resp.choices[0].message.content or "").strip()
         except Exception:
             logger.exception("OpenAI chat_reply failed")
+            if self._nano_enabled():
+                fallback_input = self._history_to_plaintext(tail, text)
+                fallback_reply = self.nano_chat_reply(
+                    system_prompt="You are a helpful assistant. Use conversation history if provided and answer clearly.",
+                    user_prompt=fallback_input,
+                )
+                if fallback_reply and not fallback_reply.startswith("Error:"):
+                    return fallback_reply.strip()
             return "🤖 Ошибка нейросети."
 
     def nano_chat_reply(self, system_prompt: str, user_prompt: str, model_name: str = None) -> str:
         """
-        Текстовый ответ через Gemini (NanoBanana).
+        Text response via Gemini (NanoBanana).
         """
         if not self._nano_enabled():
-            return "🤖 Gemini provider disabled."
-        
-        # Список моделей для попыток (если первая перегружена)
-        primary_model = model_name or os.getenv("NANOBANANA_MODEL_CHAT") or "gemini-2.5-pro"
-        fallback_model = getattr(settings, "NANOBANANA_MODEL_IMAGE_FALLBACK", "gemini-2.0-flash-exp")
-        
+            return "Gemini provider disabled."
+
+        primary_model = (model_name or settings.NANOBANANA_MODEL_CHAT or "gemini-2.5-pro").strip()
+        fallback_model = (settings.NANOBANANA_MODEL_CHAT_FALLBACK or "gemini-2.5-flash").strip()
+
         models_to_try = [primary_model]
         if fallback_model and fallback_model != primary_model:
             models_to_try.append(fallback_model)
 
-        logger.info(f"🤖 Translation models to try: {models_to_try}")
+        logger.info("Gemini translation models to try: %s", models_to_try)
 
         last_error = ""
         for current_model in models_to_try:
             try:
-                logger.info(f"🤖 Gemini chat_reply attempt with model: {current_model}")
+                logger.info("Gemini chat_reply attempt with model: %s", current_model)
                 response = self._nano_client.models.generate_content(
                     model=current_model,
                     contents=user_prompt,
@@ -125,21 +153,28 @@ class OpenAIProvider:
                         temperature=0.1,
                     )
                 )
-                return response.text.strip()
+                response_text = (getattr(response, "text", "") or "").strip()
+                if response_text:
+                    return response_text
+                last_error = "empty_response"
             except Exception as e:
                 last_error = str(e)
-                if "503" in last_error or "high demand" in last_error.lower() or "UNAVAILABLE" in last_error:
+                if "503" in last_error or "high demand" in last_error.lower() or "unavailable" in last_error.lower():
                     if len(models_to_try) > 1 and current_model == models_to_try[0]:
-                        logger.warning(f"🔥 Модель {current_model} перегружена. Срочный переход на {models_to_try[1]} для перевода промпта. Причина: {last_error}")
+                        logger.warning(
+                            "Model %s overloaded, switching to %s. Reason: %s",
+                            current_model,
+                            models_to_try[1],
+                            last_error,
+                        )
                         continue
-                
-                logger.error(f"❌ Ошибка перевода на модели {current_model}: {e}")
+
+                logger.error("Gemini chat error on model %s: %s", current_model, e)
                 if len(models_to_try) > 1 and current_model == models_to_try[0]:
                     continue
                 break
-        
-        return f"Error: {last_error}"
 
+        return f"Error: {last_error}"
     # ------------- IMAGE -------------
 
     @staticmethod

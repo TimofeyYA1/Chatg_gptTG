@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional, List
 from db_adapter.database import get_db
 from db_adapter.models import User, PremiumCredits, Subscription, CatalogItem, CatalogPage, CatalogCategory
 from api_server.providers.openai_adapter import OpenAIProvider
+from common.config import settings
 import base64
 import logging
 
@@ -311,7 +312,7 @@ def edit_image(data: ImageEditIn, db: Session = Depends(get_db)):
         translated_prompt = provider.nano_chat_reply(
             system_prompt=translator_system, 
             user_prompt=raw_prompt,
-            model_name="gemini-2.5-pro"
+            model_name=settings.NANOBANANA_MODEL_CHAT
         )
         if not translated_prompt or "Error" in translated_prompt:
             translated_prompt = raw_prompt

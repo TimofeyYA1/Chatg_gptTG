@@ -90,6 +90,15 @@ class Settings(BaseSettings):
     # --- NanoBanana / Gemini ---
     GEMINI_API_KEY: str = Field("", validation_alias=AliasChoices("GEMINI_API_KEY", "gemini_api_key"))
     NANOBANANA_ENABLED: bool = Field(False, validation_alias=AliasChoices("NANOBANANA_ENABLED", "nanobanana_enabled"))
+
+    NANOBANANA_MODEL_CHAT: str = Field(
+        "gemini-2.5-pro",
+        validation_alias=AliasChoices("NANOBANANA_MODEL_CHAT", "nanobanana_model_chat"),
+    )
+    NANOBANANA_MODEL_CHAT_FALLBACK: str = Field(
+        "gemini-2.5-flash",
+        validation_alias=AliasChoices("NANOBANANA_MODEL_CHAT_FALLBACK", "nanobanana_model_chat_fallback"),
+    )
     
     # PRIMARY MODEL (Для PRO аккаунтов) -> gemini-3-pro-image-preview
     NANOBANANA_MODEL_IMAGE: str = Field(

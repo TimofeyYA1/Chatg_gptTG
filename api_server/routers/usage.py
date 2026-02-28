@@ -190,8 +190,6 @@ def export_users_stats(token: str, db: Session = Depends(get_db)):
         raise HTTPException(403, "Access denied")
 
     # Запрос с join-ами для получения всех данных
-    msg_unit_usd = _safe_non_negative_float(settings.ESTIMATED_COST_MESSAGE_USD)
-    video_second_unit_usd = _safe_non_negative_float(settings.ESTIMATED_COST_VIDEO_SECOND_USD)
     image_std_unit_usd = _safe_non_negative_float(settings.ESTIMATED_COST_IMAGE_STD_USD)
     image_pro_unit_usd = _safe_non_negative_float(settings.ESTIMATED_COST_IMAGE_PRO_USD)
 
@@ -204,16 +202,10 @@ def export_users_stats(token: str, db: Session = Depends(get_db)):
             User.created_at,
             # Limits
             PremiumCredits.img_limit_base,
-            PremiumCredits.msg_limit_base,
-            PremiumCredits.video_limit_base,
             # Usage
             PremiumCredits.web_queries.label("img_used"),
-            PremiumCredits.total_queries.label("msg_used"),
-            PremiumCredits.video_used,
             # Addons
             PremiumCredits.image_credits.label("img_addon"),
-            PremiumCredits.web_queries_left.label("msg_addon"),
-            PremiumCredits.video_seconds_left.label("video_addon"),
             # Subscription
             Subscription.plan,
             Subscription.status.label("sub_status"),
@@ -229,27 +221,15 @@ def export_users_stats(token: str, db: Session = Depends(get_db)):
     # Превращаем в список словарей
     data = []
     total_images_cost_usd = 0.0
-    total_messages_cost_usd = 0.0
-    total_video_cost_usd = 0.0
 
     for row in results:
         img_used = _safe_non_negative_int(row.img_used)
-        msg_used = _safe_non_negative_int(row.msg_used)
-        video_used = _safe_non_negative_int(row.video_used)
         is_pro = _is_pro_plan(row.plan)
 
         image_unit_usd = image_pro_unit_usd if is_pro else image_std_unit_usd
         estimated_images_cost_usd = round(img_used * image_unit_usd, 4)
-        estimated_messages_cost_usd = round(msg_used * msg_unit_usd, 4)
-        estimated_video_cost_usd = round(video_used * video_second_unit_usd, 4)
-        estimated_total_cost_usd = round(
-            estimated_images_cost_usd + estimated_messages_cost_usd + estimated_video_cost_usd,
-            4,
-        )
 
         total_images_cost_usd += estimated_images_cost_usd
-        total_messages_cost_usd += estimated_messages_cost_usd
-        total_video_cost_usd += estimated_video_cost_usd
 
         # row - это Row object, к полям можно обращаться как row.chat_id
         d = {
@@ -268,25 +248,10 @@ def export_users_stats(token: str, db: Session = Depends(get_db)):
             "Images Limit": row.img_limit_base or 0,
             "Images Used": img_used,
             "Images Addon": row.img_addon or 0,
-            
-            # Messages (если используются)
-            "Msgs Limit": row.msg_limit_base or 0,
-            "Msgs Used": msg_used,
-            "Msgs Addon": row.msg_addon or 0,
-
-            # Video
-            "Video Limit Sec": row.video_limit_base or 0,
-            "Video Used Sec": video_used,
-            "Video Addon Sec": row.video_addon or 0,
 
             # Estimated cost (USD)
             "Estimated Image Unit USD": round(image_unit_usd, 6),
-            "Estimated Msg Unit USD": round(msg_unit_usd, 6),
-            "Estimated Video Sec Unit USD": round(video_second_unit_usd, 6),
             "Estimated Cost USD Images": estimated_images_cost_usd,
-            "Estimated Cost USD Messages": estimated_messages_cost_usd,
-            "Estimated Cost USD Video": estimated_video_cost_usd,
-            "Estimated Cost USD Total": estimated_total_cost_usd,
         }
         data.append(d)
         
@@ -295,19 +260,13 @@ def export_users_stats(token: str, db: Session = Depends(get_db)):
 
     # Создаем DataFrame
     df = pd.DataFrame(data)
-    total_cost_usd = round(total_images_cost_usd + total_messages_cost_usd + total_video_cost_usd, 4)
     summary_df = pd.DataFrame(
         [
             {"Metric": "Users", "Value": len(data)},
             {"Metric": "Estimated cost images (USD)", "Value": round(total_images_cost_usd, 4)},
-            {"Metric": "Estimated cost messages (USD)", "Value": round(total_messages_cost_usd, 4)},
-            {"Metric": "Estimated cost video (USD)", "Value": round(total_video_cost_usd, 4)},
-            {"Metric": "Estimated cost total (USD)", "Value": total_cost_usd},
             {"Metric": "Image unit STD (USD)", "Value": round(image_std_unit_usd, 6)},
             {"Metric": "Image unit PRO (USD)", "Value": round(image_pro_unit_usd, 6)},
-            {"Metric": "Message unit (USD)", "Value": round(msg_unit_usd, 6)},
-            {"Metric": "Video second unit (USD)", "Value": round(video_second_unit_usd, 6)},
-            {"Metric": "Note", "Value": "Approximate estimate, not provider billing"},
+            {"Metric": "Note", "Value": "Photo-only stats, approximate estimate"},
         ]
     )
     
