@@ -112,13 +112,20 @@ def _get_prompt_by_global_idx(db: Session, gender: str, cat_slug: str, global_id
     )
     return db.execute(stmt).scalar_one_or_none()
 
-def _is_user_pro(db: Session, user_id: int) -> bool:
-    """Проверяет, является ли подписка пользователя PRO версией."""
+def _get_user_model_tier(db: Session, user_id: int) -> str:
+    """Определяет tier модели для NanoBanana: start / pro / elite."""
     sub = db.execute(select(Subscription).where(Subscription.user_id == user_id)).scalar_one_or_none()
     if not sub or not sub.plan:
-        return False
-    # Проверка на наличие 'pro' в названии плана (Week_Pro, Month_Pro)
-    return "pro" in sub.plan.lower()
+        return "start"
+
+    plan = sub.plan.lower()
+    if "std2" in plan:
+        return "pro"
+    if "_pro" in plan:
+        return "elite"
+    if "_std" in plan:
+        return "start"
+    return "start"
 
 # --- Routes ---
 
@@ -181,8 +188,8 @@ def generate_from_catalog(data: CatalogGenIn, db: Session = Depends(get_db)):
     if not _check_and_increment_limit(db, user):
         return {"ok": False, "error": "limit_exceeded"}
 
-    # Проверяем PRO статус
-    is_pro_user = _is_user_pro(db, user.id)
+    # Определяем tier модели (start/pro/elite)
+    model_tier = _get_user_model_tier(db, user.id)
 
     prompt_parts = []
     
@@ -228,9 +235,9 @@ def generate_from_catalog(data: CatalogGenIn, db: Session = Depends(get_db)):
         return {"ok": False, "error": "bad_image_b64"}
 
     provider = OpenAIProvider()
-    # ПЕРЕДАЕМ is_pro ФЛАГ
-    logger.info(f"🎨 Starting generation for user {data.chat_id} (Pro: {is_pro_user})")
-    result = provider.edit_image_b64(raw_image, final_prompt, size="1536x1536", is_pro=is_pro_user)
+    # Передаем вычисленный tier модели
+    logger.info(f"🎨 Starting generation for user {data.chat_id} (tier: {model_tier})")
+    result = provider.edit_image_b64(raw_image, final_prompt, size="1536x1536", model_tier=model_tier)
     
     b64 = result.get("b64")
     image_ext = str(result.get("image_ext") or "jpg").lower()
@@ -275,8 +282,8 @@ def edit_image(data: ImageEditIn, db: Session = Depends(get_db)):
     if not _check_and_increment_limit(db, user):
         return {"ok": False, "error": "limit_exceeded"}
     
-    # Проверяем PRO статус
-    is_pro_user = _is_user_pro(db, user.id)
+    # Определяем tier модели (start/pro/elite)
+    model_tier = _get_user_model_tier(db, user.id)
 
     try:
         raw_image = base64.b64decode(data.image_b64)
@@ -315,9 +322,9 @@ def edit_image(data: ImageEditIn, db: Session = Depends(get_db)):
     logger.info(f"📝 Original: {raw_prompt}")
     logger.info(f"🇬🇧 Translated: {translated_prompt}")
 
-    # ПЕРЕДАЕМ is_pro ФЛАГ и переведенный промпт
-    logger.info(f"🎨 Starting custom edit for user {data.chat_id} (Pro: {is_pro_user})")
-    result = provider.edit_image_b64(raw_image, translated_prompt, size=data.size or "1536x1536", is_pro=is_pro_user)
+    # Передаем вычисленный tier модели и переведенный промпт
+    logger.info(f"🎨 Starting custom edit for user {data.chat_id} (tier: {model_tier})")
+    result = provider.edit_image_b64(raw_image, translated_prompt, size=data.size or "1536x1536", model_tier=model_tier)
     
     b64_str = result.get("b64")
     image_ext = str(result.get("image_ext") or "jpg").lower()
@@ -347,3 +354,4 @@ def edit_image(data: ImageEditIn, db: Session = Depends(get_db)):
         }
 
     return {"ok": True, "stub": False, "b64": b64_str, "caption": "✨ Готово!", "image_ext": image_ext}
+

@@ -39,6 +39,16 @@ def _get_or_create_credits(db: Session, user_id: int) -> PremiumCredits:
     return c
 
 
+def _tier_name_for_plan(plan_key: str) -> str:
+    if "_Std2" in plan_key:
+        return "Про"
+    if "_Pro" in plan_key:
+        return "Элит"
+    if "_Std" in plan_key:
+        return "Старт"
+    return "Премиум"
+
+
 # --- КОНФИГУРАЦИЯ ТАРИФОВ ---
 PLANS_CONFIG = {
     # STANDARD
@@ -48,6 +58,7 @@ PLANS_CONFIG = {
 
     # PRO
     "Week_Pro":  {"price": 799,   "desc": "Pro: Неделя", "rec_interval": "Week",  "rec_period": 1},
+    "Month_Std2": {"price": 999,  "desc": "Про — 1 месяц", "rec_interval": "Month", "rec_period": 1},
     "Month_Pro": {"price": 1599,  "desc": "PRO — 1 месяц",  "rec_interval": "Month", "rec_period": 1},
     "Year_Pro":  {"price": 11999, "desc": "Pro: Год",    "rec_interval": "Year",  "rec_period": 1},
 }
@@ -81,8 +92,7 @@ async def send_success_notification(chat_id: int, plan_key: str, message_id: int
             now = datetime.now(timezone.utc)
 
             # Определяем название плана для пользователя
-            is_pro = "Pro" in plan_key
-            tier_name = "Pro" if is_pro else "Обычная"
+            tier_name = _tier_name_for_plan(plan_key)
 
             if "Week" in plan_key:
                 next_date_dt = now + timedelta(days=7)

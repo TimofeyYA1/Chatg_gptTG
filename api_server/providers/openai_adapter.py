@@ -225,6 +225,25 @@ class OpenAIProvider:
         except Exception:
             return None
 
+    @staticmethod
+    def _normalize_model_tier(model_tier: str | None, is_pro: bool = False) -> str:
+        if model_tier:
+            tier = str(model_tier).strip().lower()
+            aliases = {
+                "std": "start",
+                "standard": "start",
+                "start": "start",
+                "pro2": "pro",
+                "mid": "pro",
+                "middle": "pro",
+                "pro": "pro",
+                "elite": "elite",
+                "max": "elite",
+                "premium": "elite",
+            }
+            return aliases.get(tier, "start")
+        return "elite" if is_pro else "start"
+
     def _enforce_aspect_ratio(self, img: "Image.Image", ratio: str) -> "Image.Image":
         parsed = self._parse_ratio(ratio)
         if not parsed:
@@ -286,24 +305,39 @@ class OpenAIProvider:
             logger.warning(f"[image] failed to build ImageConfig for {model_name}: {e}")
             return None
 
-    def _edit_image_with_nano(self, image_bytes: bytes, prompt: str, is_pro: bool = False) -> Dict[str, Any]:
+    def _edit_image_with_nano(
+        self,
+        image_bytes: bytes,
+        prompt: str,
+        is_pro: bool = False,
+        model_tier: str | None = None,
+    ) -> Dict[str, Any]:
         if not self._nano_enabled(): return {"b64": None, "reason": "provider_disabled"}
         if Image is None: return {"b64": None, "reason": "pillow_missing"}
 
         # --- ЖЕСТКОЕ ФОРМИРОВАНИЕ СПИСКА МОДЕЛЕЙ ---
         # Берем из настроек, если пусто - используем дефолты
-        m_pro = str(getattr(settings, "NANOBANANA_MODEL_IMAGE", "") or "gemini-3-pro-image-preview").strip()
-        m_flash = str(getattr(settings, "NANOBANANA_MODEL_IMAGE_FALLBACK", "") or "gemini-2.5-flash-image").strip()
-        
-        if not m_pro: m_pro = "gemini-3-pro-image-preview"
-        if not m_flash: m_flash = "gemini-2.5-flash-image"
-        
-        selected_model = m_pro if is_pro else m_flash
-        if not selected_model:
-            selected_model = "gemini-3-pro-image-preview" if is_pro else "gemini-2.5-flash-image"
+        m_elite = str(getattr(settings, "NANOBANANA_MODEL_IMAGE", "") or "gemini-3-pro-image-preview").strip()
+        m_pro2 = str(getattr(settings, "NANOBANANA_MODEL_IMAGE_PRO2", "") or "gemini-3.1-flash-image-preview").strip()
+        m_start = str(getattr(settings, "NANOBANANA_MODEL_IMAGE_FALLBACK", "") or "gemini-2.5-flash-image").strip()
+
+        if not m_elite:
+            m_elite = "gemini-3-pro-image-preview"
+        if not m_pro2:
+            m_pro2 = "gemini-3.1-flash-image-preview"
+        if not m_start:
+            m_start = "gemini-2.5-flash-image"
+
+        normalized_tier = self._normalize_model_tier(model_tier, is_pro=is_pro)
+        if normalized_tier == "elite":
+            selected_model = m_elite
+        elif normalized_tier == "pro":
+            selected_model = m_pro2
+        else:
+            selected_model = m_start
 
         models_to_try = [selected_model]
-        logger.info(f"[image] selected model (Pro={is_pro}): {selected_model}")
+        logger.info(f"[image] selected model (tier={normalized_tier}): {selected_model}")
 
         try:
             img = Image.open(io.BytesIO(image_bytes))
@@ -478,7 +512,14 @@ class OpenAIProvider:
         }
 
 
-    def edit_image_b64(self, image_bytes: bytes, prompt: str, size: str = "1024x1024", is_pro: bool = False) -> Dict[str, Any]:
+    def edit_image_b64(
+        self,
+        image_bytes: bytes,
+        prompt: str,
+        size: str = "1024x1024",
+        is_pro: bool = False,
+        model_tier: str | None = None,
+    ) -> Dict[str, Any]:
         """
         Публичный метод.
         """
@@ -488,6 +529,6 @@ class OpenAIProvider:
         
         if self._nano_enabled():
             # Передаем is_pro в приватный метод
-            return self._edit_image_with_nano(image_bytes, p, is_pro=is_pro)
+            return self._edit_image_with_nano(image_bytes, p, is_pro=is_pro, model_tier=model_tier)
         
         return {"b64": None, "reason": "no_provider_enabled"}

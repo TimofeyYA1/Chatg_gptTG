@@ -8,6 +8,7 @@ import asyncio
 import sys
 from datetime import date, datetime
 from typing import Dict, Any, Optional
+from urllib.parse import urlparse, urlunparse, urlencode
 
 from telegram_bot import api_client
 from telegram_bot import ui_elements as ui
@@ -38,20 +39,20 @@ BUY_LOCK: set[int] = set()
 _MEDIA_CACHE: Dict[str, str] = {}
 
 PLAN_TRANSLATE = {
-    "Week_Std": "7 дней (Обычная)", "Week_Pro": "7 дней (Pro)",
-    "Month_Std": "месяц (Обычная)", "Month_Pro": "месяц (Pro)",
-    "Year_Std": "год (Обычная)",    "Year_Pro": "год (Pro)",
+    "Week_Std": "7 дней (Старт)", "Week_Pro": "7 дней (Элит)",
+    "Month_Std": "месяц (Старт)", "Month_Std2": "месяц (Про)", "Month_Pro": "месяц (Элит)",
+    "Year_Std": "год (Старт)",    "Year_Pro": "год (Элит)",
     "free": "нет",
 }
 PLAN_PRICES = {
     "Week_Std": "399",  "Week_Pro": "799",
-    "Month_Std": "799", "Month_Pro": "1599",
+    "Month_Std": "799", "Month_Std2": "999", "Month_Pro": "1599",
     "Year_Std": "5999",  "Year_Pro": "11999",
 }
 
 STARS_PRICES_SUB = {
     "Week_Std": 300,  "Week_Pro": 600,
-    "Month_Std": 900, "Month_Pro": 1800,
+    "Month_Std": 900, "Month_Std2": 1150, "Month_Pro": 1800,
     "Year_Std": 4500, "Year_Pro": 9000,
 }
 STARS_PRICES_PKG = {
@@ -64,7 +65,64 @@ RUB_PKG_MAP = {"150": 349, "1000": 1999, "5000": 5999}
 
 ADMIN_IDS = [847867090,370260285] 
 
+
+def _plan_key_from_choice(period: str, tier: str) -> str:
+    period_cap = (period or "month").capitalize()
+    tier_norm = (tier or "start").lower()
+    if period_cap == "Month":
+        if tier_norm in {"std", "start"}:
+            return "Month_Std"
+        if tier_norm == "pro":
+            return "Month_Std2"
+        if tier_norm == "elite":
+            return "Month_Pro"
+
+    if tier_norm in {"std", "start"}:
+        tier_cap = "Std"
+    elif tier_norm in {"pro", "elite"}:
+        tier_cap = "Pro"
+    else:
+        tier_cap = tier_norm.capitalize()
+    return f"{period_cap}_{tier_cap}"
+
+
+def _tier_name_for_plan(plan_key: str) -> str:
+    if "_Std2" in plan_key:
+        return "Про"
+    if "_Pro" in plan_key:
+        return "Элит"
+    if "_Std" in plan_key:
+        return "Старт"
+    return "Премиум"
+
 # -------------------- Utils --------------------
+
+_LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "api"}
+
+
+def _is_local_host(host: str | None) -> bool:
+    if not host:
+        return False
+    host = host.strip("[]").lower()
+    return host in _LOCAL_HOSTS or host.endswith(".local")
+
+
+def _checkout_base_url() -> str:
+    raw = (settings.PAYMENTS_PUBLIC_URL or settings.API_PUBLIC_URL or "").strip()
+    if not raw:
+        return "http://localhost:8000"
+
+    if "://" not in raw:
+        raw = f"https://{raw}"
+
+    parsed = urlparse(raw)
+    if not parsed.netloc:
+        return "http://localhost:8000"
+
+    if parsed.scheme == "http" and not _is_local_host(parsed.hostname):
+        parsed = parsed._replace(scheme="https")
+
+    return urlunparse(parsed).rstrip("/")
 
 def _format_ru_date(iso: str | None) -> str:
     if not iso: return "—"
@@ -798,9 +856,9 @@ async def premium_cmd(message: Message | CallbackQuery, state: FSMContext, is_ed
     role = (summary.get("role") or "free").strip()
     
     if role.lower() == "free":
-        caption = ui.PREMIUM_PAYWALL_CAPTION_RU
-        kb = ui.kb_premium_paywall("ru")
-        img = img_ui("premium_paywall")
+        caption = ui.TEXT_TIER_SELECTION
+        kb = ui.kb_tier_selection()
+        img = img_ui("compare")
     else:
         totals = summary.get("totals", {})
         usage = summary.get("usage", {})
@@ -909,19 +967,20 @@ async def resume_sub(call: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == ui.CB_TIER_STD)
 async def on_tier_std(call: CallbackQuery, state: FSMContext):
-    # ОБЫЧНАЯ ВЕРСИЯ -> man.jpg
-    # ПЕРЕДАЕМ CAPTION (можно пустой или ui.PREMIUM_PAYWALL_CAPTION_RU)
-    caption = ui.PREMIUM_PAYWALL_CAPTION_RU 
-    kb = ui.kb_premium_paywall("ru", tier="std")
+    kb = ui.kb_premium_paywall("ru", tier="start")
     await panel_edit_media(call, state, img_ui("man"), caption='', kb=kb)
     await call.answer()
 
 @router.callback_query(F.data == ui.CB_TIER_PRO)
 async def on_tier_pro(call: CallbackQuery, state: FSMContext):
-    # PRO ВЕРСИЯ
-    caption = ui.PREMIUM_PAYWALL_CAPTION_RU
     kb = ui.kb_premium_paywall("ru", tier="pro")
     await panel_edit_media(call, state, img_ui("man1"), caption='', kb=kb)
+    await call.answer()
+
+@router.callback_query(F.data == ui.CB_TIER_ELITE)
+async def on_tier_elite(call: CallbackQuery, state: FSMContext):
+    kb = ui.kb_premium_paywall("ru", tier="elite")
+    await panel_edit_media(call, state, img_ui("man2"), caption='', kb=kb)
     await call.answer()
 
 @router.callback_query(F.data == "nav:back_to_tiers")
@@ -934,14 +993,11 @@ async def on_back_to_tiers(call: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("premium:buy:"))
 async def ask_payment_method_sub(call: CallbackQuery, state: FSMContext):
-    # call.data пример: premium:buy:week:pro или premium:buy:week:std
+    # call.data пример: premium:buy:month:pro / premium:buy:month:start / premium:buy:month:elite
     parts = call.data.split(":")
     period = parts[2] 
-    tier = parts[3] if len(parts) > 3 else "std" 
-    
-    period_cap = period.capitalize()
-    tier_cap = tier.capitalize()
-    plan_key = f"{period_cap}_{tier_cap}"
+    tier = parts[3] if len(parts) > 3 else "start" 
+    plan_key = _plan_key_from_choice(period, tier)
     
     price_rub = PLAN_PRICES.get(plan_key, "0")
     price_stars = STARS_PRICES_SUB.get(plan_key, 0)
@@ -994,19 +1050,21 @@ async def on_pay_choice_rub(call: CallbackQuery, state: FSMContext):
         return
     
     message_id = call.message.message_id
-    api_url = settings.API_PUBLIC_URL 
-    if not api_url.startswith("http"):
-        api_url = "http://localhost:8000"
-        
-    payment_link = f"{api_url}/payments/checkout?chat_id={uid}&type={ptype}&value={pvalue}&message_id={message_id}"
+    api_url = _checkout_base_url()
+    query = urlencode({
+        "chat_id": uid,
+        "type": ptype,
+        "value": pvalue,
+        "message_id": message_id,
+    })
+    payment_link = f"{api_url}/payments/checkout?{query}"
     
     caption = ""
     
     if ptype == "plan":
         plan_key = pvalue
         now = datetime.now()
-        
-        tier_name = "Pro" if "Pro" in plan_key else "Обычная"
+        tier_name = _tier_name_for_plan(plan_key)
         
         if "Week" in plan_key:
             next_date = now + timedelta(days=7)

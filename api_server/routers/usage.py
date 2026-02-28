@@ -3,14 +3,33 @@ from __future__ import annotations
 import io
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func
+from sqlalchemy import select
 import pandas as pd
+from openpyxl.utils import get_column_letter
 
 from common.config import settings
 from db_adapter.database import get_db
-from db_adapter.models import User, PremiumCredits, Subscription, Payment
+from db_adapter.models import User, PremiumCredits, Subscription
 
 router = APIRouter(tags=["usage"])
+
+
+def _safe_non_negative_float(value: float | int | None) -> float:
+    try:
+        return max(0.0, float(value or 0.0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _safe_non_negative_int(value: int | None) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _is_pro_plan(plan: str | None) -> bool:
+    return "pro" in str(plan or "").lower()
 
 
 def _get_or_create_user(db: Session, chat_id: int) -> User:
@@ -171,6 +190,11 @@ def export_users_stats(token: str, db: Session = Depends(get_db)):
         raise HTTPException(403, "Access denied")
 
     # Запрос с join-ами для получения всех данных
+    msg_unit_usd = _safe_non_negative_float(settings.ESTIMATED_COST_MESSAGE_USD)
+    video_second_unit_usd = _safe_non_negative_float(settings.ESTIMATED_COST_VIDEO_SECOND_USD)
+    image_std_unit_usd = _safe_non_negative_float(settings.ESTIMATED_COST_IMAGE_STD_USD)
+    image_pro_unit_usd = _safe_non_negative_float(settings.ESTIMATED_COST_IMAGE_PRO_USD)
+
     stmt = (
         select(
             User.chat_id,
@@ -204,7 +228,29 @@ def export_users_stats(token: str, db: Session = Depends(get_db)):
     
     # Превращаем в список словарей
     data = []
+    total_images_cost_usd = 0.0
+    total_messages_cost_usd = 0.0
+    total_video_cost_usd = 0.0
+
     for row in results:
+        img_used = _safe_non_negative_int(row.img_used)
+        msg_used = _safe_non_negative_int(row.msg_used)
+        video_used = _safe_non_negative_int(row.video_used)
+        is_pro = _is_pro_plan(row.plan)
+
+        image_unit_usd = image_pro_unit_usd if is_pro else image_std_unit_usd
+        estimated_images_cost_usd = round(img_used * image_unit_usd, 4)
+        estimated_messages_cost_usd = round(msg_used * msg_unit_usd, 4)
+        estimated_video_cost_usd = round(video_used * video_second_unit_usd, 4)
+        estimated_total_cost_usd = round(
+            estimated_images_cost_usd + estimated_messages_cost_usd + estimated_video_cost_usd,
+            4,
+        )
+
+        total_images_cost_usd += estimated_images_cost_usd
+        total_messages_cost_usd += estimated_messages_cost_usd
+        total_video_cost_usd += estimated_video_cost_usd
+
         # row - это Row object, к полям можно обращаться как row.chat_id
         d = {
             "Chat ID": row.chat_id,
@@ -220,13 +266,27 @@ def export_users_stats(token: str, db: Session = Depends(get_db)):
             
             # Images
             "Images Limit": row.img_limit_base or 0,
-            "Images Used": row.img_used or 0,
+            "Images Used": img_used,
             "Images Addon": row.img_addon or 0,
             
             # Messages (если используются)
             "Msgs Limit": row.msg_limit_base or 0,
-            "Msgs Used": row.msg_used or 0,
+            "Msgs Used": msg_used,
             "Msgs Addon": row.msg_addon or 0,
+
+            # Video
+            "Video Limit Sec": row.video_limit_base or 0,
+            "Video Used Sec": video_used,
+            "Video Addon Sec": row.video_addon or 0,
+
+            # Estimated cost (USD)
+            "Estimated Image Unit USD": round(image_unit_usd, 6),
+            "Estimated Msg Unit USD": round(msg_unit_usd, 6),
+            "Estimated Video Sec Unit USD": round(video_second_unit_usd, 6),
+            "Estimated Cost USD Images": estimated_images_cost_usd,
+            "Estimated Cost USD Messages": estimated_messages_cost_usd,
+            "Estimated Cost USD Video": estimated_video_cost_usd,
+            "Estimated Cost USD Total": estimated_total_cost_usd,
         }
         data.append(d)
         
@@ -235,20 +295,37 @@ def export_users_stats(token: str, db: Session = Depends(get_db)):
 
     # Создаем DataFrame
     df = pd.DataFrame(data)
+    total_cost_usd = round(total_images_cost_usd + total_messages_cost_usd + total_video_cost_usd, 4)
+    summary_df = pd.DataFrame(
+        [
+            {"Metric": "Users", "Value": len(data)},
+            {"Metric": "Estimated cost images (USD)", "Value": round(total_images_cost_usd, 4)},
+            {"Metric": "Estimated cost messages (USD)", "Value": round(total_messages_cost_usd, 4)},
+            {"Metric": "Estimated cost video (USD)", "Value": round(total_video_cost_usd, 4)},
+            {"Metric": "Estimated cost total (USD)", "Value": total_cost_usd},
+            {"Metric": "Image unit STD (USD)", "Value": round(image_std_unit_usd, 6)},
+            {"Metric": "Image unit PRO (USD)", "Value": round(image_pro_unit_usd, 6)},
+            {"Metric": "Message unit (USD)", "Value": round(msg_unit_usd, 6)},
+            {"Metric": "Video second unit (USD)", "Value": round(video_second_unit_usd, 6)},
+            {"Metric": "Note", "Value": "Approximate estimate, not provider billing"},
+        ]
+    )
     
     # Записываем в BytesIO
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Users Stats')
+        summary_df.to_excel(writer, index=False, sheet_name='Cost Summary')
         
         # Авто-ширина колонок (примерная)
-        worksheet = writer.sheets['Users Stats']
-        for idx, col in enumerate(df.columns):
-            max_len = max(
-                df[col].astype(str).map(len).max(),
-                len(col)
-            ) + 2
-            worksheet.column_dimensions[chr(65 + idx)].width = min(max_len, 50) # A=65
+        for sheet_name, source_df in (("Users Stats", df), ("Cost Summary", summary_df)):
+            worksheet = writer.sheets[sheet_name]
+            for idx, col in enumerate(source_df.columns, start=1):
+                max_len = max(
+                    source_df[col].astype(str).map(len).max(),
+                    len(col),
+                ) + 2
+                worksheet.column_dimensions[get_column_letter(idx)].width = min(max_len, 50)
 
     output.seek(0)
     

@@ -21,6 +21,7 @@ PLANS = {
     # --- STANDARD ---
     "Week_Std":  {"price_cents": 399_00,  "rub_price": 399,  "limits": {"messages": 0, "images": 150,  "video": 0}, "duration": {"days": 7}},
     "Month_Std": {"price_cents": 799_00, "rub_price": 799, "limits": {"messages": 0, "images": 300,  "video": 0}, "duration": {"months": 1}},
+    "Month_Std2": {"price_cents": 999_00, "rub_price": 999, "limits": {"messages": 0, "images": 300,  "video": 0}, "duration": {"months": 1}},
     "Year_Std":  {"price_cents": 5999_00, "rub_price": 5999, "limits": {"messages": 0, "images": 7200, "video": 0}, "duration": {"years": 1}},
 
     # --- PRO ---
@@ -33,6 +34,7 @@ PLAN_ALIASES = {
     "Week": "Week_Std", "Month": "Month_Std", "Year": "Year_Std",
     "week": "Week_Std", "month": "Month_Std", "year": "Year_Std",
     "Week_Std": "Week_Std", "Month_Std": "Month_Std", "Year_Std": "Year_Std",
+    "Month_Std2": "Month_Std2",
     "Week_Pro": "Week_Pro", "Month_Pro": "Month_Pro", "Year_Pro": "Year_Pro",
     "Light": "Week_Std", "Max": "Month_Std", "Ultra": "Year_Std",
 }

@@ -28,4 +28,4 @@ echo "[api] Syncing catalog from JSON..."
 python sync_catalog.py
 
 echo "[api] Starting Uvicorn…"
-exec uvicorn api_server.main:app --host 0.0.0.0 --port 8000
+exec uvicorn api_server.main:app --host 0.0.0.0 --port 8000 --no-server-header

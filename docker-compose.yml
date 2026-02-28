@@ -27,7 +27,7 @@ services:
       db:
         condition: service_healthy
     ports:
-      - "8080:8000"
+      - "127.0.0.1:8080:8000"
     entrypoint: ["/bin/bash", "docker/entrypoint_api.sh"]
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/healthz || exit 1"]
