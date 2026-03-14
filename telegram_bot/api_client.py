@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import httpx
 from common.config import settings
+from common.subscriptions import get_plan_spec, normalize_plan_key
 
 API_BASE = os.getenv("API_BASE", "http://api:8000").rstrip("/")
 # Увеличиваем таймаут на чтение до 120 секунд, так как генерация может быть долгой
@@ -116,8 +117,6 @@ async def resume_plan(user_id: int) -> dict:
             return {"ok": False, "detail": str(e)}
         
 async def buy_addon(chat_id: int, qty: int, price_cents: int) -> Dict[str, Any]:
-    await balance_topup(chat_id, price_cents)
-    
     payload = {
         "chat_id": chat_id,
         "qty": qty,
@@ -135,29 +134,28 @@ async def buy_addon(chat_id: int, qty: int, price_cents: int) -> Dict[str, Any]:
 
 
 async def set_plan(chat_id: int, plan: str | None = None, period: str | None = None) -> Dict[str, Any]:
-    PAYWALL = {
-        "week":  {"plan": "Week",  "stars": 300_00},
-        "month": {"plan": "Month", "stars": 900_00},
-        "year":  {"plan": "Year",  "stars": 4500_00},
-    }
-    
-    if period:
+    plan_name = normalize_plan_key(plan)
+    if not plan_name and period:
         period_key = period.lower()
-        if period_key not in PAYWALL:
-            return {"error": True, "detail": "unknown period"}
-        plan_name = PAYWALL[period_key]["plan"]
-        stars = PAYWALL[period_key]["stars"]
-    else:
+        period_map = {
+            "week": "Week_Std",
+            "month": "Month_Std",
+            "year": "Year_Std",
+        }
+        plan_name = period_map.get(period_key) or normalize_plan_key(period)
+
+    spec = get_plan_spec(plan_name)
+    if not spec:
         return {"error": True, "detail": "unknown plan"}
 
-    topup_res = await balance_topup(chat_id, stars)
+    topup_res = await balance_topup(chat_id, spec.price_cents)
     if topup_res.get("error"):
         return {"error": True, "step": "topup", **topup_res}
 
     async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
         r2 = await client.post(
             f"{API_BASE}/subscriptions/set_plan",
-            json={"chat_id": chat_id, "plan": plan_name},
+            json={"chat_id": chat_id, "plan": plan_name, "price_cents": spec.price_cents},
             headers=_internal_headers(),
         )
 

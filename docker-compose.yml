@@ -70,7 +70,7 @@ services:
       - .env
     environment:
       - DB_HOST=db
-      - ADMIN_CHAT_ID=847867090
+      - ADMIN_CHAT_ID=${ADMIN_CHAT_ID:-0}
     restart: always
     logging:
       driver: "json-file"

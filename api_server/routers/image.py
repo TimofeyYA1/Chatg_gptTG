@@ -6,8 +6,9 @@ from typing import Dict, Any, Optional, List
 
 from db_adapter.database import get_db
 from db_adapter.models import User, PremiumCredits, Subscription, CatalogItem, CatalogPage, CatalogCategory
-from api_server.providers.openai_adapter import OpenAIProvider
-from common.config import settings
+from api_server.providers.gemini_provider import GeminiProvider
+from api_server.services.costs import record_generation_cost
+from common.subscriptions import tier_code_from_plan
 import base64
 import logging
 
@@ -116,17 +117,9 @@ def _get_prompt_by_global_idx(db: Session, gender: str, cat_slug: str, global_id
 def _get_user_model_tier(db: Session, user_id: int) -> str:
     """Определяет tier модели для NanoBanana: start / pro / elite."""
     sub = db.execute(select(Subscription).where(Subscription.user_id == user_id)).scalar_one_or_none()
-    if not sub or not sub.plan:
+    if not sub:
         return "start"
-
-    plan = sub.plan.lower()
-    if "std2" in plan:
-        return "pro"
-    if "_pro" in plan:
-        return "elite"
-    if "_std" in plan:
-        return "start"
-    return "start"
+    return tier_code_from_plan(sub.plan)
 
 # --- Routes ---
 
@@ -235,10 +228,24 @@ def generate_from_catalog(data: CatalogGenIn, db: Session = Depends(get_db)):
         _rollback_limit(db, user)
         return {"ok": False, "error": "bad_image_b64"}
 
-    provider = OpenAIProvider()
+    provider = GeminiProvider()
     # Передаем вычисленный tier модели
     logger.info(f"🎨 Starting generation for user {data.chat_id} (tier: {model_tier})")
     result = provider.edit_image_b64(raw_image, final_prompt, size="1536x1536", model_tier=model_tier)
+
+    charged_usd = 0.0
+    usage_tokens = result.get("usage_tokens")
+    model_used = str(result.get("model_used") or "")
+    provider_name = str(result.get("provider") or "")
+    if usage_tokens and model_used:
+        charged_usd = record_generation_cost(
+            db,
+            user,
+            kind="image_catalog",
+            provider=provider_name,
+            model_name=model_used,
+            usage_tokens=usage_tokens,
+        )
     
     b64 = result.get("b64")
     image_ext = str(result.get("image_ext") or "jpg").lower()
@@ -264,10 +271,19 @@ def generate_from_catalog(data: CatalogGenIn, db: Session = Depends(get_db)):
             "ok": True, 
             "stub": True, 
             "caption": caption_text,
-            "fail_reason": fail_reason
+            "fail_reason": fail_reason,
+            "cost_usd_charged": round(charged_usd, 6),
         }
 
-    return {"ok": True, "stub": False, "b64": b64, "caption": "✨ Готово!", "image_ext": image_ext}
+    db.commit()
+    return {
+        "ok": True,
+        "stub": False,
+        "b64": b64,
+        "caption": "✨ Готово!",
+        "image_ext": image_ext,
+        "cost_usd_charged": round(charged_usd, 6),
+    }
 
 
 @router.post("/edit")
@@ -292,40 +308,28 @@ def edit_image(data: ImageEditIn, db: Session = Depends(get_db)):
         _rollback_limit(db, user)
         return {"ok": False, "error": "bad_image_b64"}
 
-    provider = OpenAIProvider()
-    
-    # --- 1. СТРОГИЙ ПЕРЕВОД ПРОМПТА НА АНГЛИЙСКИЙ ---
-    # Используем chat_reply для перевода БЕЗ "улучшений" и отсебятины.
-    
+    provider = GeminiProvider()
+    charged_usd = 0.0
+
     raw_prompt = data.prompt.strip()
-    
-    # Системный промпт для строгого переводчика
-    translator_system = (
-        "You are a professional translator. Translate the user's text to English accurately and strictly. "
-        "Do NOT add any extra descriptions, style improvements, or conversational filler. "
-        "Do NOT change the meaning. Keep technical terms (like '16:9', '4k', 'vertical') as is. "
-        "Output ONLY the translation."
-    )
-    
-    try:
-        # Используем gemini-2.5-pro для перевода
-        translated_prompt = provider.nano_chat_reply(
-            system_prompt=translator_system, 
-            user_prompt=raw_prompt,
-            model_name=settings.NANOBANANA_MODEL_CHAT
-        )
-        if not translated_prompt or "Error" in translated_prompt:
-            translated_prompt = raw_prompt
-    except Exception as e:
-        logger.warning(f"⚠️ Prompt translation failed: {e}")
-        translated_prompt = raw_prompt
+    logger.info(f"📝 Prompt (translation disabled): {raw_prompt}")
 
-    logger.info(f"📝 Original: {raw_prompt}")
-    logger.info(f"🇬🇧 Translated: {translated_prompt}")
-
-    # Передаем вычисленный tier модели и переведенный промпт
+    # Передаем вычисленный tier модели и исходный промпт без перевода
     logger.info(f"🎨 Starting custom edit for user {data.chat_id} (tier: {model_tier})")
-    result = provider.edit_image_b64(raw_image, translated_prompt, size=data.size or "1536x1536", model_tier=model_tier)
+    result = provider.edit_image_b64(raw_image, raw_prompt, size=data.size or "1536x1536", model_tier=model_tier)
+
+    usage_tokens = result.get("usage_tokens")
+    model_used = str(result.get("model_used") or "")
+    provider_name = str(result.get("provider") or "")
+    if usage_tokens and model_used:
+        charged_usd += record_generation_cost(
+            db,
+            user,
+            kind="image_edit",
+            provider=provider_name,
+            model_name=model_used,
+            usage_tokens=usage_tokens,
+        )
     
     b64_str = result.get("b64")
     image_ext = str(result.get("image_ext") or "jpg").lower()
@@ -351,8 +355,18 @@ def edit_image(data: ImageEditIn, db: Session = Depends(get_db)):
             "ok": True, 
             "stub": True, 
             "caption": caption_text,
-            "fail_reason": fail_reason 
+            "fail_reason": fail_reason,
+            "cost_usd_charged": round(charged_usd, 6),
         }
 
-    return {"ok": True, "stub": False, "b64": b64_str, "caption": "✨ Готово!", "image_ext": image_ext}
+    db.commit()
+    return {
+        "ok": True,
+        "stub": False,
+        "b64": b64_str,
+        "caption": "✨ Готово!",
+        "image_ext": image_ext,
+        "cost_usd_charged": round(charged_usd, 6),
+    }
+
 

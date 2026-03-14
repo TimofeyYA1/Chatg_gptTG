@@ -8,6 +8,7 @@ import pandas as pd
 from openpyxl.utils import get_column_letter
 
 from common.config import settings
+from common.subscriptions import tier_code_from_plan
 from db_adapter.database import get_db
 from db_adapter.models import User, PremiumCredits, Subscription
 
@@ -29,7 +30,7 @@ def _safe_non_negative_int(value: int | None) -> int:
 
 
 def _is_pro_plan(plan: str | None) -> bool:
-    return "pro" in str(plan or "").lower()
+    return tier_code_from_plan(plan) in {"pro", "elite"}
 
 
 def _get_or_create_user(db: Session, chat_id: int) -> User:
@@ -200,6 +201,7 @@ def export_users_stats(token: str, db: Session = Depends(get_db)):
             User.role,
             User.balance_cents,
             User.created_at,
+            User.total_generation_cost_usd,
             # Limits
             PremiumCredits.img_limit_base,
             # Usage
@@ -221,15 +223,18 @@ def export_users_stats(token: str, db: Session = Depends(get_db)):
     # Превращаем в список словарей
     data = []
     total_images_cost_usd = 0.0
+    total_real_cost_usd = 0.0
 
     for row in results:
         img_used = _safe_non_negative_int(row.img_used)
         is_pro = _is_pro_plan(row.plan)
+        real_total_cost_usd = round(_safe_non_negative_float(row.total_generation_cost_usd), 6)
 
         image_unit_usd = image_pro_unit_usd if is_pro else image_std_unit_usd
         estimated_images_cost_usd = round(img_used * image_unit_usd, 4)
 
         total_images_cost_usd += estimated_images_cost_usd
+        total_real_cost_usd += real_total_cost_usd
 
         # row - это Row object, к полям можно обращаться как row.chat_id
         d = {
@@ -252,6 +257,7 @@ def export_users_stats(token: str, db: Session = Depends(get_db)):
             # Estimated cost (USD)
             "Estimated Image Unit USD": round(image_unit_usd, 6),
             "Estimated Cost USD Images": estimated_images_cost_usd,
+            "Real Cost USD Total": real_total_cost_usd,
         }
         data.append(d)
         
@@ -263,6 +269,7 @@ def export_users_stats(token: str, db: Session = Depends(get_db)):
     summary_df = pd.DataFrame(
         [
             {"Metric": "Users", "Value": len(data)},
+            {"Metric": "Real total generation cost (USD)", "Value": round(total_real_cost_usd, 6)},
             {"Metric": "Estimated cost images (USD)", "Value": round(total_images_cost_usd, 4)},
             {"Metric": "Image unit STD (USD)", "Value": round(image_std_unit_usd, 6)},
             {"Metric": "Image unit PRO (USD)", "Value": round(image_pro_unit_usd, 6)},

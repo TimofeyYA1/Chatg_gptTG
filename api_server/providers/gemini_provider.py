@@ -7,10 +7,10 @@ import base64
 import time
 import re
 
-from openai import OpenAI
 from common.config import settings
 
 logger = logging.getLogger(__name__)
+TELEGRAM_PHOTO_SAFE_MAX_BYTES = 9_500_000
 
 # Импорт Google GenAI
 try:
@@ -24,19 +24,15 @@ except Exception:
 
 # Импорт Pillow
 try:
-    from PIL import Image
+    from PIL import Image, ImageDraw, ImageFont
 except Exception:
     Image = None
+    ImageDraw = None
+    ImageFont = None
 
 
-class OpenAIProvider:
+class GeminiProvider:
     def __init__(self) -> None:
-        self.client: Optional[OpenAI] = (
-            OpenAI(api_key=settings.OPENAI_API_KEY, timeout=10.0)
-            if settings.OPENAI_API_KEY
-            else None
-        )
-
         self._nano_client = None
         if getattr(settings, "NANOBANANA_ENABLED", False) and settings.GEMINI_API_KEY:
             if _google_genai is None:
@@ -53,7 +49,7 @@ class OpenAIProvider:
                     self._nano_client = None
 
     def enabled(self) -> bool:
-        return bool(self.client) and bool(settings.OPENAI_ENABLED)
+        return self._nano_enabled()
 
     def _nano_enabled(self) -> bool:
         return bool(self._nano_client) and bool(
@@ -61,11 +57,6 @@ class OpenAIProvider:
         )
 
     # ------------- TEXT -------------
-    
-    def _use_max_completion_tokens(self) -> bool:
-        model = (settings.OPENAI_MODEL_CHAT or "").lower()
-        markers = ("4.1", "gpt-5", "o3", "o4")
-        return any(m in model for m in markers)
 
     @staticmethod
     def _history_to_plaintext(history: List[Dict[str, str]], user_prompt: str) -> str:
@@ -78,58 +69,138 @@ class OpenAIProvider:
         lines.append(f"user: {user_prompt}")
         return "\n".join(lines)
 
-    def chat_reply(self, history: List[Dict[str, str]], user_prompt: str) -> str:
+    @staticmethod
+    def _safe_token_count(value: Any) -> int:
+        try:
+            return max(0, int(value or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    def _modality_token_counts(self, details: Any) -> dict[str, int]:
+        counts = {"text": 0, "image": 0}
+        for item in details or []:
+            modality_raw = str(getattr(item, "modality", "") or "").upper()
+            token_count = self._safe_token_count(getattr(item, "token_count", 0))
+            if "TEXT" in modality_raw:
+                counts["text"] += token_count
+            elif "IMAGE" in modality_raw:
+                counts["image"] += token_count
+        return counts
+
+    def _fallback_image_input_tokens_for_model(self, model_name: str, has_input_image: bool) -> int:
+        if not has_input_image:
+            return 0
+        model = (model_name or "").strip().lower()
+        # Gemini 3 Pro Image pricing docs provide explicit image-input token equivalent.
+        if "gemini-3-pro-image-preview" in model:
+            return 560
+        return 0
+
+    def _extract_gemini_usage(
+        self,
+        response: Any,
+        *,
+        model_name: str,
+        has_input_image: bool = False,
+    ) -> dict[str, int]:
+        usage = getattr(response, "usage_metadata", None)
+        if usage is None:
+            return {
+                "input_text_tokens": 0,
+                "input_image_tokens": 0,
+                "output_text_tokens": 0,
+                "output_image_tokens": 0,
+            }
+
+        prompt_counts = self._modality_token_counts(getattr(usage, "prompt_tokens_details", None))
+        candidate_counts = self._modality_token_counts(getattr(usage, "candidates_tokens_details", None))
+        thoughts_tokens = self._safe_token_count(getattr(usage, "thoughts_token_count", 0))
+
+        input_image_tokens = prompt_counts["image"]
+        if input_image_tokens == 0:
+            input_image_tokens = self._fallback_image_input_tokens_for_model(model_name, has_input_image)
+
+        return {
+            "input_text_tokens": prompt_counts["text"],
+            "input_image_tokens": input_image_tokens,
+            "output_text_tokens": candidate_counts["text"] + thoughts_tokens,
+            "output_image_tokens": candidate_counts["image"],
+        }
+
+    def chat_reply(
+        self,
+        history: List[Dict[str, str]],
+        user_prompt: str,
+        return_meta: bool = False,
+    ) -> str | Dict[str, Any]:
         text = (user_prompt or "").strip()
         if not text:
+            if return_meta:
+                return {
+                    "text": "🤖 Сообщение пустое.",
+                    "error": None,
+                    "provider": "system",
+                    "model_used": "none",
+                    "usage_tokens": {
+                        "input_text_tokens": 0,
+                        "input_image_tokens": 0,
+                        "output_text_tokens": 0,
+                        "output_image_tokens": 0,
+                    },
+                }
             return "🤖 Сообщение пустое."
 
-        if not self.enabled():
-            if self._nano_enabled():
-                tail = history[-settings.OPENAI_CONTEXT_MESSAGES:] if history else []
-                fallback_input = self._history_to_plaintext(tail, text)
-                fallback_reply = self.nano_chat_reply(
-                    system_prompt="You are a helpful assistant. Use conversation history if provided and answer clearly.",
-                    user_prompt=fallback_input,
-                )
-                if fallback_reply and not fallback_reply.startswith("Error:"):
-                    return fallback_reply.strip()
-                logger.warning("Gemini chat fallback failed: %s", fallback_reply)
-                return "🤖 Ошибка нейросети."
-            return f"🤖 (симуляция) Я получил: {text}"
-
-        tail = history[-settings.OPENAI_CONTEXT_MESSAGES:] if history else []
-        messages = ([{"role": "system", "content": "You are a helpful assistant."}] + tail + [{"role": "user", "content": text}])
-
-        try:
-            params: Dict = {
-                "model": settings.OPENAI_MODEL_CHAT,
-                "messages": messages,
-                "temperature": settings.OPENAI_TEMPERATURE,
-            }
-            if self._use_max_completion_tokens():
-                params["max_completion_tokens"] = settings.OPENAI_MAX_OUTPUT_TOKENS
-            else:
-                params["max_tokens"] = settings.OPENAI_MAX_OUTPUT_TOKENS
-
-            resp = self.client.chat.completions.create(**params)
-            return (resp.choices[0].message.content or "").strip()
-        except Exception:
-            logger.exception("OpenAI chat_reply failed")
-            if self._nano_enabled():
-                fallback_input = self._history_to_plaintext(tail, text)
-                fallback_reply = self.nano_chat_reply(
-                    system_prompt="You are a helpful assistant. Use conversation history if provided and answer clearly.",
-                    user_prompt=fallback_input,
-                )
-                if fallback_reply and not fallback_reply.startswith("Error:"):
-                    return fallback_reply.strip()
+        if not self._nano_enabled():
+            if return_meta:
+                return {
+                    "text": "🤖 Ошибка нейросети.",
+                    "error": "provider_disabled",
+                    "provider": "system",
+                    "model_used": "none",
+                    "usage_tokens": {
+                        "input_text_tokens": 0,
+                        "input_image_tokens": 0,
+                        "output_text_tokens": 0,
+                        "output_image_tokens": 0,
+                    },
+                }
             return "🤖 Ошибка нейросети."
 
-    def nano_chat_reply(self, system_prompt: str, user_prompt: str, model_name: str = None) -> str:
+        tail = history[-settings.GEMINI_CONTEXT_MESSAGES:] if history else []
+        request_text = self._history_to_plaintext(tail, text)
+        reply = self.nano_chat_reply(
+            system_prompt="You are a helpful assistant. Use conversation history if provided and answer clearly.",
+            user_prompt=request_text,
+            model_name=settings.NANOBANANA_MODEL_CHAT,
+            return_meta=return_meta,
+        )
+
+        if return_meta:
+            if isinstance(reply, dict):
+                reply_text = str(reply.get("text") or "").strip()
+                if reply_text:
+                    return reply
+            logger.warning("Gemini chat reply failed: %s", reply)
+            return {"text": "🤖 Ошибка нейросети.", "error": "provider_error"}
+
+        if isinstance(reply, str) and reply and not reply.startswith("Error:"):
+            return reply.strip()
+        logger.warning("Gemini chat reply failed: %s", reply)
+        return "🤖 Ошибка нейросети."
+
+    def nano_chat_reply(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model_name: str = None,
+        return_meta: bool = False,
+    ) -> str | Dict[str, Any]:
         """
         Text response via Gemini (NanoBanana).
         """
         if not self._nano_enabled():
+            if return_meta:
+                return {"text": "", "error": "Gemini provider disabled."}
             return "Gemini provider disabled."
 
         primary_model = (model_name or settings.NANOBANANA_MODEL_CHAT or "gemini-2.5-pro").strip()
@@ -150,13 +221,23 @@ class OpenAIProvider:
                     contents=user_prompt,
                     config=types.GenerateContentConfig(
                         system_instruction=system_prompt,
-                        temperature=0.1,
+                        temperature=settings.GEMINI_TEMPERATURE,
                     )
                 )
                 response_text = (getattr(response, "text", "") or "").strip()
-                if response_text:
-                    return response_text
-                last_error = "empty_response"
+                if not response_text:
+                    last_error = "empty_response"
+                    continue
+
+                if return_meta:
+                    return {
+                        "text": response_text,
+                        "error": None,
+                        "provider": "gemini",
+                        "model_used": current_model,
+                        "usage_tokens": self._extract_gemini_usage(response, model_name=current_model, has_input_image=False),
+                    }
+                return response_text
             except Exception as e:
                 last_error = str(e)
                 if "503" in last_error or "high demand" in last_error.lower() or "unavailable" in last_error.lower():
@@ -174,6 +255,8 @@ class OpenAIProvider:
                     continue
                 break
 
+        if return_meta:
+            return {"text": "", "error": f"Error: {last_error}"}
         return f"Error: {last_error}"
     # ------------- IMAGE -------------
 
@@ -261,6 +344,197 @@ class OpenAIProvider:
             return None
 
     @staticmethod
+    def _extract_quoted_lines(prompt: str) -> list[str]:
+        text = str(prompt or "")
+        raw: list[str] = []
+        for pattern in (r'"([^"\n]{1,200})"', r"«([^»\n]{1,200})»"):
+            raw.extend(re.findall(pattern, text))
+
+        lines: list[str] = []
+        seen: set[str] = set()
+        for item in raw:
+            line = str(item or "").strip()
+            if not line or line in seen:
+                continue
+            seen.add(line)
+            lines.append(line)
+        return lines
+
+    @staticmethod
+    def _is_text_poster_prompt(prompt: str, quoted_lines: list[str] | None = None) -> bool:
+        lines = quoted_lines or []
+        if not lines:
+            return False
+        text = (prompt or "").lower()
+        markers = (
+            "poster", "banner", "typography", "headline", "font", "text",
+            "постер", "баннер", "реклам", "надпись", "шрифт", "текст",
+        )
+        return any(marker in text for marker in markers)
+
+    @staticmethod
+    def _pick_text_color(prompt: str) -> tuple[int, int, int, int]:
+        text = (prompt or "").lower()
+        if "gold" in text or "золот" in text:
+            return (236, 198, 108, 255)
+        return (255, 255, 255, 255)
+
+    @staticmethod
+    def _load_font(size: int, bold: bool = False):
+        if ImageFont is None:
+            return None
+
+        bold_paths = (
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            "C:\\Windows\\Fonts\\arialbd.ttf",
+            "C:\\Windows\\Fonts\\segoeuib.ttf",
+        )
+        regular_paths = (
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "C:\\Windows\\Fonts\\arial.ttf",
+            "C:\\Windows\\Fonts\\segoeui.ttf",
+        )
+        paths = bold_paths if bold else regular_paths
+        for path in paths:
+            try:
+                return ImageFont.truetype(path, size=max(8, int(size)))
+            except Exception:
+                continue
+        try:
+            return ImageFont.load_default()
+        except Exception:
+            return None
+
+    def _fit_font_to_width(
+        self,
+        draw: "ImageDraw.ImageDraw",
+        text: str,
+        *,
+        max_width: int,
+        start_size: int,
+        min_size: int,
+        bold: bool,
+        stroke_width: int = 1,
+    ) -> tuple[Any, tuple[int, int, int, int]]:
+        size = max(min_size, start_size)
+        while size >= min_size:
+            font = self._load_font(size, bold=bold)
+            if font is None:
+                break
+            bbox = draw.textbbox((0, 0), text, font=font, stroke_width=stroke_width)
+            if (bbox[2] - bbox[0]) <= max_width:
+                return font, bbox
+            size -= 2
+
+        fallback = self._load_font(min_size, bold=bold)
+        if fallback is None:
+            raise RuntimeError("font_unavailable")
+        return fallback, draw.textbbox((0, 0), text, font=fallback, stroke_width=stroke_width)
+
+    def _augment_prompt_for_exact_text(self, prompt: str) -> str:
+        lines = self._extract_quoted_lines(prompt)
+        if not self._is_text_poster_prompt(prompt, lines):
+            return prompt
+
+        exact_lines = "\n".join(f"{idx + 1}. {line}" for idx, line in enumerate(lines[:8]))
+        strict_block = (
+            "STRICT TYPOGRAPHY REQUIREMENTS:\n"
+            "- Render text exactly as provided, without spelling changes.\n"
+            "- Preserve alphabet (Cyrillic/Latin), punctuation, and symbols exactly.\n"
+            "- Keep the text sharp, straight, and readable.\n"
+            "- Do not add extra tiny symbols, microtext, or watermark-like artifacts.\n"
+            "- Keep a clean background under text areas.\n"
+            "- If exact text cannot be rendered, keep text area clean; do not output misspelled text.\n"
+            "EXACT TEXT LINES:\n"
+            f"{exact_lines}"
+        )
+        return f"{prompt}\n\n{strict_block}"
+
+    def _overlay_exact_poster_text(self, img: "Image.Image", prompt: str) -> "Image.Image | None":
+        if ImageDraw is None or ImageFont is None:
+            return None
+
+        lines = self._extract_quoted_lines(prompt)
+        if not self._is_text_poster_prompt(prompt, lines):
+            return None
+
+        headline = lines[0].strip()
+        sublines = [line.strip() for line in lines[1:] if line.strip()]
+        if not headline:
+            return None
+
+        canvas = img.convert("RGBA")
+        draw = ImageDraw.Draw(canvas)
+        width, height = canvas.size
+        color = self._pick_text_color(prompt)
+        shadow = (0, 0, 0, 170)
+        text_l = (prompt or "").lower()
+
+        top_ratio = 0.38
+        if any(k in text_l for k in ("в верхней", "вверху", "upper", "top")):
+            top_ratio = 0.20
+        elif any(k in text_l for k in ("в центре", "center", "centre")):
+            top_ratio = 0.40
+
+        main_start_size = max(int(width * 0.115), 36)
+        main_font, main_bbox = self._fit_font_to_width(
+            draw,
+            headline,
+            max_width=int(width * 0.86),
+            start_size=main_start_size,
+            min_size=24,
+            bold=True,
+            stroke_width=2,
+        )
+        main_w = main_bbox[2] - main_bbox[0]
+        main_h = main_bbox[3] - main_bbox[1]
+        main_x = (width - main_w) // 2
+        y = int(height * top_ratio)
+
+        draw.text((main_x + 2, y + 2), headline, font=main_font, fill=shadow)
+        draw.text(
+            (main_x, y),
+            headline,
+            font=main_font,
+            fill=color,
+            stroke_width=3,
+            stroke_fill=(0, 0, 0, 120),
+        )
+
+        if not sublines:
+            return canvas
+
+        y += main_h + max(int(height * 0.035), 16)
+        sub_start = max(int(main_start_size * 0.38), 20)
+        for line in sublines[:5]:
+            sub_font, sub_bbox = self._fit_font_to_width(
+                draw,
+                line,
+                max_width=int(width * 0.90),
+                start_size=sub_start,
+                min_size=15,
+                bold=False,
+                stroke_width=1,
+            )
+            sub_w = sub_bbox[2] - sub_bbox[0]
+            sub_h = sub_bbox[3] - sub_bbox[1]
+            sx = (width - sub_w) // 2
+            draw.text((sx + 1, y + 1), line, font=sub_font, fill=shadow)
+            draw.text(
+                (sx, y),
+                line,
+                font=sub_font,
+                fill=color,
+                stroke_width=1,
+                stroke_fill=(0, 0, 0, 90),
+            )
+            y += sub_h + max(int(height * 0.009), 6)
+
+        return canvas
+
+    @staticmethod
     def _normalize_model_tier(model_tier: str | None, is_pro: bool = False) -> str:
         if model_tier:
             tier = str(model_tier).strip().lower()
@@ -312,6 +586,77 @@ class OpenAIProvider:
             f"(target {ratio})"
         )
         return fixed
+
+    def _prepare_transport_image(
+        self,
+        img: "Image.Image",
+        *,
+        source_raw: bytes | None = None,
+        source_ext: str = "jpg",
+        max_bytes: int = TELEGRAM_PHOTO_SAFE_MAX_BYTES,
+    ) -> tuple[bytes, str]:
+        src_ext = str(source_ext or "jpg").lower()
+        if src_ext == "jpeg":
+            src_ext = "jpg"
+
+        if source_raw and len(source_raw) <= max_bytes and src_ext in {"jpg", "png", "webp"}:
+            return source_raw, src_ext
+
+        resampling = getattr(Image, "Resampling", None)
+        lanczos = resampling.LANCZOS if resampling else getattr(Image, "LANCZOS", Image.BICUBIC)
+
+        best_payload: tuple[bytes, str] | None = None
+        width = max(1, int(getattr(img, "width", 0) or 1))
+        height = max(1, int(getattr(img, "height", 0) or 1))
+
+        for scale in (1.0, 0.92, 0.84, 0.76):
+            if scale >= 0.999:
+                candidate = img
+            else:
+                new_w = max(1, int(width * scale))
+                new_h = max(1, int(height * scale))
+                candidate = img.resize((new_w, new_h), resample=lanczos)
+
+            # Prefer JPEG for Telegram photo size constraints.
+            jpeg_base = candidate.convert("RGB") if candidate.mode not in ("RGB", "L") else candidate
+            for quality in (92, 88, 84, 80, 76, 72, 68):
+                try:
+                    b = io.BytesIO()
+                    jpeg_base.save(
+                        b,
+                        format="JPEG",
+                        quality=quality,
+                        optimize=True,
+                        progressive=True,
+                    )
+                    data = b.getvalue()
+                    if best_payload is None or len(data) < len(best_payload[0]):
+                        best_payload = (data, "jpg")
+                    if len(data) <= max_bytes:
+                        return data, "jpg"
+                except Exception:
+                    continue
+
+            try:
+                b = io.BytesIO()
+                candidate.save(b, format="PNG", optimize=True)
+                data = b.getvalue()
+                if best_payload is None or len(data) < len(best_payload[0]):
+                    best_payload = (data, "png")
+                if len(data) <= max_bytes:
+                    return data, "png"
+            except Exception:
+                pass
+
+        if best_payload:
+            logger.warning(
+                "[image] output still large after compression attempts: %s bytes",
+                len(best_payload[0]),
+            )
+            return best_payload
+
+        fallback = source_raw or b""
+        return fallback, (src_ext if src_ext in {"jpg", "png", "webp"} else "jpg")
 
     def _image_config_for_model(self, model_name: str, aspect_ratio: str) -> Any:
         model_l = (model_name or "").lower()
@@ -371,7 +716,13 @@ class OpenAIProvider:
         else:
             selected_model = m_start
 
-        models_to_try = [selected_model]
+        quoted_lines = self._extract_quoted_lines(prompt)
+        strict_text_mode = self._is_text_poster_prompt(prompt, quoted_lines)
+        if strict_text_mode and selected_model != m_elite:
+            logger.info("[image] strict text mode enabled -> forcing elite model for cleaner typography")
+            selected_model = m_elite
+
+        prompt_for_model = self._augment_prompt_for_exact_text(prompt) if strict_text_mode else prompt
         logger.info(f"[image] selected model (tier={normalized_tier}): {selected_model}")
 
         try:
@@ -410,7 +761,8 @@ class OpenAIProvider:
         retry_delay_sec = 30
         attempts = 2
         start_time = time.time()
-        model_name = models_to_try[0]
+        model_name = selected_model
+        last_usage_tokens: dict[str, int] | None = None
         overloaded_markers = (
             "503",
             "429",
@@ -425,15 +777,22 @@ class OpenAIProvider:
             "timed out",
         )
 
+        def _pack_result(payload: Dict[str, Any]) -> Dict[str, Any]:
+            payload["provider"] = "gemini"
+            payload["model_used"] = model_name
+            if last_usage_tokens is not None:
+                payload["usage_tokens"] = last_usage_tokens
+            return payload
+
         for attempt in range(1, attempts + 1):
             elapsed = time.time() - start_time
             if elapsed > total_timeout:
                 logger.warning(f"⏱️ [timeout] exceeded ({int(elapsed)}s > {total_timeout}s)")
-                return {"b64": None, "reason": "timeout"}
+                return _pack_result({"b64": None, "reason": "timeout"})
 
             try:
                 logger.info(f"[image] try model={model_name} attempt={attempt}/{attempts}")
-                full_user_prompt = f"{prompt}\n\nIMPORTANT: Use {aspect_ratio} aspect ratio for the output image."
+                full_user_prompt = f"{prompt_for_model}\n\nIMPORTANT: Use {aspect_ratio} aspect ratio for the output image."
 
                 gen_cfg_kwargs = {
                     "system_instruction": system_instruction,
@@ -449,6 +808,11 @@ class OpenAIProvider:
                     model=model_name,
                     contents=[full_user_prompt, img],
                     config=gen_config,
+                )
+                last_usage_tokens = self._extract_gemini_usage(
+                    response,
+                    model_name=model_name,
+                    has_input_image=True,
                 )
 
                 if not response:
@@ -484,26 +848,55 @@ class OpenAIProvider:
                         source_format = (out_img.format or "JPEG").upper()
                         fixed_img = self._enforce_aspect_ratio(out_img, aspect_ratio)
 
+                        if strict_text_mode:
+                            corrected_img = self._overlay_exact_poster_text(fixed_img, prompt)
+                            if corrected_img is not None:
+                                png_buf = io.BytesIO()
+                                corrected_img.save(png_buf, format="PNG", optimize=True)
+                                png_raw = png_buf.getvalue()
+                                payload_bytes, payload_ext = self._prepare_transport_image(
+                                    corrected_img,
+                                    source_raw=png_raw,
+                                    source_ext="png",
+                                )
+                                logger.info(f"[image] success via {model_name} with exact-text overlay")
+                                return _pack_result(
+                                    {
+                                        "b64": base64.b64encode(payload_bytes).decode("utf-8"),
+                                        "reason": None,
+                                        "image_ext": payload_ext,
+                                    }
+                                )
+
                         if fixed_img.size == out_img.size:
                             ext_map = {"JPEG": "jpg", "JPG": "jpg", "PNG": "png", "WEBP": "webp"}
                             image_ext = ext_map.get(source_format, "jpg")
+                            payload_bytes, payload_ext = self._prepare_transport_image(
+                                fixed_img,
+                                source_raw=raw,
+                                source_ext=image_ext,
+                            )
                             logger.info(f"[image] success via {model_name} without re-encoding, format={source_format}")
-                            return {
-                                "b64": base64.b64encode(raw).decode("utf-8"),
-                                "reason": None,
-                                "image_ext": image_ext,
-                            }
+                            return _pack_result(
+                                {
+                                    "b64": base64.b64encode(payload_bytes).decode("utf-8"),
+                                    "reason": None,
+                                    "image_ext": payload_ext,
+                                }
+                            )
 
-                        if fixed_img.mode not in ("RGB", "RGBA"):
-                            fixed_img = fixed_img.convert("RGB")
-                        buf = io.BytesIO()
-                        fixed_img.save(buf, format="PNG", optimize=True)
+                        payload_bytes, payload_ext = self._prepare_transport_image(
+                            fixed_img,
+                            source_ext="png",
+                        )
                         logger.info(f"[image] success via {model_name} with lossless PNG postprocess")
-                        return {
-                            "b64": base64.b64encode(buf.getvalue()).decode("utf-8"),
-                            "reason": None,
-                            "image_ext": "png",
-                        }
+                        return _pack_result(
+                            {
+                                "b64": base64.b64encode(payload_bytes).decode("utf-8"),
+                                "reason": None,
+                                "image_ext": payload_ext,
+                            }
+                        )
                     except Exception as decode_err:
                         logger.error(f"API [{model_name}]: decode error: {decode_err}")
                         last_error = "invalid_image_data"
@@ -525,26 +918,28 @@ class OpenAIProvider:
                     # Do not spend another full cycle after provider-side deadline errors.
                     is_deadline = ("deadline exceeded" in lowered_err) or ("deadline_exceeded" in lowered_err)
                     if is_deadline:
-                        return {"b64": None, "reason": "server_overloaded"}
+                        return _pack_result({"b64": None, "reason": "server_overloaded"})
                     if attempt < attempts:
                         remaining = total_timeout - (time.time() - start_time)
                         if remaining <= 0:
-                            return {"b64": None, "reason": "timeout"}
+                            return _pack_result({"b64": None, "reason": "timeout"})
                         sleep_for = min(retry_delay_sec, max(0, int(remaining)))
                         if sleep_for > 0:
                             logger.warning(f"[image] retrying {model_name} in {sleep_for}s")
                             time.sleep(sleep_for)
                         continue
-                    return {"b64": None, "reason": "server_overloaded"}
+                    return _pack_result({"b64": None, "reason": "server_overloaded"})
 
                 logger.error(f"API [{model_name}] error: {err_str}")
                 break
 
         lowered = str(last_error).lower()
-        return {
-            "b64": None,
-            "reason": "server_overloaded" if any(marker in lowered for marker in overloaded_markers) else last_error,
-        }
+        return _pack_result(
+            {
+                "b64": None,
+                "reason": "server_overloaded" if any(marker in lowered for marker in overloaded_markers) else last_error,
+            }
+        )
 
 
     def edit_image_b64(
@@ -567,3 +962,4 @@ class OpenAIProvider:
             return self._edit_image_with_nano(image_bytes, p, is_pro=is_pro, model_tier=model_tier)
         
         return {"b64": None, "reason": "no_provider_enabled"}
+

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import argparse
 import json
 import sys
+from dataclasses import asdict, dataclass
 from pathlib import Path
-import argparse
-from dataclasses import dataclass, asdict
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -18,46 +18,6 @@ class CheckResult:
     name: str
     ok: bool
     details: str = ""
-
-
-def _run_openai_checks(results: list[CheckResult]) -> None:
-    if not settings.OPENAI_API_KEY:
-        results.append(CheckResult("openai_api_key_present", False, "OPENAI_API_KEY is empty"))
-        return
-
-    try:
-        from openai import OpenAI
-    except Exception as exc:
-        results.append(CheckResult("openai_sdk_import", False, str(exc)))
-        return
-
-    client = OpenAI(api_key=settings.OPENAI_API_KEY, timeout=20.0)
-    for model in (settings.OPENAI_MODEL_CHAT, settings.OPENAI_MODEL_IMAGE):
-        try:
-            client.models.retrieve(model)
-            results.append(CheckResult(f"openai.models.retrieve:{model}", True))
-        except Exception as exc:
-            results.append(CheckResult(f"openai.models.retrieve:{model}", False, str(exc)))
-
-    try:
-        resp = client.chat.completions.create(
-            model=settings.OPENAI_MODEL_CHAT,
-            messages=[{"role": "user", "content": "Reply with OK only."}],
-            max_completion_tokens=16,
-        )
-        text = (resp.choices[0].message.content or "").strip()
-        results.append(CheckResult(f"openai.chat.completions:{settings.OPENAI_MODEL_CHAT}", True, f"response={text[:80]}"))
-    except Exception:
-        try:
-            resp = client.chat.completions.create(
-                model=settings.OPENAI_MODEL_CHAT,
-                messages=[{"role": "user", "content": "Reply with OK only."}],
-                max_tokens=16,
-            )
-            text = (resp.choices[0].message.content or "").strip()
-            results.append(CheckResult(f"openai.chat.completions:{settings.OPENAI_MODEL_CHAT}", True, f"response={text[:80]}"))
-        except Exception as exc:
-            results.append(CheckResult(f"openai.chat.completions:{settings.OPENAI_MODEL_CHAT}", False, str(exc)))
 
 
 def _run_gemini_checks(results: list[CheckResult], deep_image: bool = False) -> None:
@@ -133,7 +93,7 @@ def _run_gemini_checks(results: list[CheckResult], deep_image: bool = False) -> 
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate configured OpenAI/Gemini models.")
+    parser = argparse.ArgumentParser(description="Validate configured Gemini models.")
     parser.add_argument(
         "--deep-image",
         action="store_true",
@@ -142,11 +102,9 @@ def main() -> int:
     args = parser.parse_args()
 
     results: list[CheckResult] = []
-    _run_openai_checks(results)
     _run_gemini_checks(results, deep_image=args.deep_image)
 
     payload = {
-        "openai_enabled": bool(settings.OPENAI_ENABLED),
         "nanobanana_enabled": bool(settings.NANOBANANA_ENABLED),
         "checks": [asdict(r) for r in results],
     }

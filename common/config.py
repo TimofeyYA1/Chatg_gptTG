@@ -1,9 +1,24 @@
 from pathlib import Path
+import re
 from pydantic import Field, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # абсолютный путь к .env на уровень выше папки common/
 ENV_FILE = (Path(__file__).resolve().parents[1] / ".env").as_posix()
+
+
+def _parse_int_list(raw: str | None) -> list[int]:
+    if not raw:
+        return []
+    result: list[int] = []
+    for chunk in re.split(r"[,\s;]+", str(raw).strip()):
+        if not chunk:
+            continue
+        try:
+            result.append(int(chunk))
+        except ValueError:
+            continue
+    return result
 
 
 class Settings(BaseSettings):
@@ -41,33 +56,11 @@ class Settings(BaseSettings):
     # --- Telegram ---
     TELEGRAM_BOT_TOKEN: str = Field("", validation_alias=AliasChoices("TELEGRAM_BOT_TOKEN", "telegram_bot_token"))
     BOT_NAME: str = Field("FacelabXbot", validation_alias=AliasChoices("BOT_NAME", "bot_name"))
+    ADMIN_IDS: str = Field("", validation_alias=AliasChoices("ADMIN_IDS", "admin_ids"))
 
     # --- CloudPayments ---
     CLOUDPAYMENTS_PUBLIC_ID: str = Field("", validation_alias=AliasChoices("CLOUDPAYMENTS_PUBLIC_ID", "cloudpayments_public_id"))
     CLOUDPAYMENTS_API_SECRET: str = Field("", validation_alias=AliasChoices("CLOUDPAYMENTS_API_SECRET", "cloudpayments_api_secret"))
-
-    # --- OpenAI ---
-    OPENAI_API_KEY: str = Field("", validation_alias=AliasChoices("OPENAI_API_KEY", "openai_api_key"))
-    OPENAI_ENABLED: bool = Field(True, validation_alias=AliasChoices("OPENAI_ENABLED", "openai_enabled"))
-
-    OPENAI_MODEL_CHAT: str = Field(
-        "gpt-4o-mini",
-        validation_alias=AliasChoices("OPENAI_MODEL_CHAT", "openai_model_chat", "OPENAI_CHAT_MODEL", "openai_chat_model"),
-    )
-    OPENAI_MODEL_IMAGE: str = Field(
-        "gpt-image-1",
-        validation_alias=AliasChoices("OPENAI_MODEL_IMAGE", "openai_model_image", "OPENAI_IMAGE_MODEL", "openai_image_model"),
-    )
-
-    OPENAI_MAX_OUTPUT_TOKENS: int = Field(
-        128, validation_alias=AliasChoices("OPENAI_MAX_OUTPUT_TOKENS", "openai_max_output_tokens"),
-    )
-    OPENAI_CONTEXT_MESSAGES: int = Field(
-        4, validation_alias=AliasChoices("OPENAI_CONTEXT_MESSAGES", "openai_context_messages"),
-    )
-    OPENAI_TEMPERATURE: float = Field(
-        1, validation_alias=AliasChoices("OPENAI_TEMPERATURE", "openai_temperature"),
-    )
 
     # --- Cost estimation (USD) ---
     ESTIMATED_COST_IMAGE_STD_USD: float = Field(
@@ -90,6 +83,12 @@ class Settings(BaseSettings):
     # --- NanoBanana / Gemini ---
     GEMINI_API_KEY: str = Field("", validation_alias=AliasChoices("GEMINI_API_KEY", "gemini_api_key"))
     NANOBANANA_ENABLED: bool = Field(False, validation_alias=AliasChoices("NANOBANANA_ENABLED", "nanobanana_enabled"))
+    GEMINI_CONTEXT_MESSAGES: int = Field(
+        4, validation_alias=AliasChoices("GEMINI_CONTEXT_MESSAGES", "gemini_context_messages"),
+    )
+    GEMINI_TEMPERATURE: float = Field(
+        0.1, validation_alias=AliasChoices("GEMINI_TEMPERATURE", "gemini_temperature"),
+    )
 
     NANOBANANA_MODEL_CHAT: str = Field(
         "gemini-2.5-pro",
@@ -118,15 +117,15 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("NANOBANANA_MODEL_IMAGE_PRO2", "nanobanana_model_image_pro2"),
     )
     
-    DEEPGRAM_API_KEY: str = Field(
-        'None', validation_alias=AliasChoices("DEEPGRAM_API_KEY", "DEEPGRAM_API_KEY"),
-    )
-
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,
         env_file_encoding="utf-8",
         populate_by_name=True,
         extra="ignore",
     )
+
+    @property
+    def admin_id_list(self) -> list[int]:
+        return _parse_int_list(self.ADMIN_IDS)
 
 settings = Settings()

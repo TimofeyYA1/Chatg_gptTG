@@ -152,10 +152,57 @@ def _track_links_tables(conn) -> None:
     )
 
 
+def _generation_cost_tracking(conn) -> None:
+    table_names = set(inspect(conn).get_table_names())
+    if "users" not in table_names:
+        print("[migrations] users table is missing, skip generation costs migration")
+        return
+
+    conn.execute(
+        text(
+            """
+            ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS total_generation_cost_usd NUMERIC(14, 6) NOT NULL DEFAULT 0
+            """
+        )
+    )
+
+    conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS generation_cost_events (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                kind VARCHAR(32) NOT NULL,
+                provider VARCHAR(32) NOT NULL,
+                model_name VARCHAR(128) NOT NULL,
+                input_text_tokens INTEGER NOT NULL DEFAULT 0,
+                input_image_tokens INTEGER NOT NULL DEFAULT 0,
+                output_text_tokens INTEGER NOT NULL DEFAULT 0,
+                output_image_tokens INTEGER NOT NULL DEFAULT 0,
+                cost_usd NUMERIC(14, 6) NOT NULL DEFAULT 0,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+    )
+    conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_generation_cost_events_user_id ON generation_cost_events (user_id)"
+        )
+    )
+    conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_generation_cost_events_created_at ON generation_cost_events (created_at)"
+        )
+    )
+
+
 MIGRATIONS: list[Migration] = [
     Migration("20260223_01_promo_tokens_multi_use_columns", _promo_tokens_multi_use_columns),
     Migration("20260223_02_promo_tokens_credits_default_50", _promo_tokens_credits_default_50),
     Migration("20260223_03_track_links_tables", _track_links_tables),
+    Migration("20260228_01_generation_cost_tracking", _generation_cost_tracking),
 ]
 
 

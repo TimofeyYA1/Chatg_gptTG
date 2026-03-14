@@ -11,6 +11,7 @@ from sqlalchemy import (
     Text,
     Boolean,
     BigInteger,
+    Numeric,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -30,6 +31,11 @@ class User(Base):
     username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     role: Mapped[str] = mapped_column(String(50), default="free")
     balance_cents: Mapped[int] = mapped_column(Integer, default=0)
+    total_generation_cost_usd: Mapped[float] = mapped_column(
+        Numeric(14, 6),
+        default=0,
+        server_default="0",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -50,6 +56,11 @@ class User(Base):
         "Subscription", 
         back_populates="user", 
         uselist=False
+    )
+    generation_cost_events: Mapped[list["GenerationCostEvent"]] = relationship(
+        "GenerationCostEvent",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
 
 
@@ -83,6 +94,35 @@ class PremiumCredits(Base):
     web_queries_left: Mapped[int] = mapped_column(Integer, default=0)    # доп. текст
     image_credits: Mapped[int] = mapped_column(Integer, default=0)       # доп. изображения
     video_seconds_left: Mapped[int] = mapped_column(Integer, default=0)  # доп. видео
+
+
+class GenerationCostEvent(Base):
+    __tablename__ = "generation_cost_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)  # image_edit|image_catalog|prompt_translation|chat_reply
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)  # gemini|...
+    model_name: Mapped[str] = mapped_column(String(128), nullable=False)
+
+    input_text_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    input_image_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    output_text_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    output_image_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+    cost_usd: Mapped[float] = mapped_column(
+        Numeric(14, 6),
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    user: Mapped["User"] = relationship("User", back_populates="generation_cost_events")
 
 
 # -------------------- CHATS --------------------

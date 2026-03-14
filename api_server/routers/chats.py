@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from db_adapter.database import get_db
 from db_adapter.models import User, ChatSession, ChatMessage
-from api_server.providers.openai_adapter import OpenAIProvider
+from api_server.providers.gemini_provider import GeminiProvider
+from api_server.services.costs import record_generation_cost
 
 MAX_CONTEXT_CHARS = 6_000  # примерно 3–4k токенов на историю, нормальный эконом-режим
 
@@ -51,7 +52,7 @@ def _get_active_session(db: Session, user_id: int) -> ChatSession:
     if sess:
         return sess
     # если нет активного — создаём дефолтный
-    sess = ChatSession(user_id=user.id, title="Чат 1", is_active=True)
+    sess = ChatSession(user_id=user_id, title="Чат 1", is_active=True)
     db.add(sess)
     db.commit()
     db.refresh(sess)
@@ -376,11 +377,29 @@ def add_message(chat_id: int, payload: MessageIn, db: Session = Depends(get_db))
     history = trim_context_by_chars(history, MAX_CONTEXT_CHARS)
 
     # генерируем ответ
-    provider = OpenAIProvider()
-    reply = provider.chat_reply(history, text)
+    provider = GeminiProvider()
+    reply_payload = provider.chat_reply(history, text, return_meta=True)
+    charged_usd = 0.0
+
+    if isinstance(reply_payload, dict):
+        reply = str(reply_payload.get("text") or "").strip() or "🤖 Ошибка нейросети."
+        usage_tokens = reply_payload.get("usage_tokens")
+        model_used = str(reply_payload.get("model_used") or "")
+        provider_name = str(reply_payload.get("provider") or "")
+        if usage_tokens and model_used:
+            charged_usd = record_generation_cost(
+                db,
+                user,
+                kind="chat_reply",
+                provider=provider_name,
+                model_name=model_used,
+                usage_tokens=usage_tokens,
+            )
+    else:
+        reply = str(reply_payload or "").strip() or "🤖 Ошибка нейросети."
 
     # сохраняем ответ
     db.add(ChatMessage(session_id=sess.id, role="assistant", content=reply))
     db.commit()
 
-    return {"ok": True, "reply": reply}
+    return {"ok": True, "reply": reply, "cost_usd_charged": round(charged_usd, 6)}

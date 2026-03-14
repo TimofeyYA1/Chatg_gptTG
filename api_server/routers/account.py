@@ -57,6 +57,13 @@ def _get_or_create_credits(db: Session, user: User) -> PremiumCredits:
     return p
 
 
+def _safe_non_negative_float(value: float | int | None) -> float:
+    try:
+        return max(0.0, float(value or 0.0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
 # -------------------- routes --------------------
 
 @router.get("/profile/{chat_id}")
@@ -106,4 +113,5 @@ def profile(chat_id: int, db: Session = Depends(get_db)):
         "active_until": active_until_iso,
         "usage": usage,
         "premium": premium_block,
+        "total_generation_cost_usd": round(_safe_non_negative_float(user.total_generation_cost_usd), 6),
     }

@@ -82,9 +82,7 @@ CB_CANCEL_SUB = "premium:cancel"
 CB_RESUME_SUB = "premium:resume" # <--- НОВАЯ КНОПКА
 
 # Keys for packages (Initial click)
-CB_PKG_150 = "pkg:150"
-CB_PKG_1000 = "pkg:1000"
-CB_PKG_5000 = "pkg:5000"
+CB_PKG_300 = "pkg:300"
 
 # Keys for Result Actions
 CB_SAVE_FILE = "res:save_file"
@@ -172,39 +170,17 @@ TEXT_PREMIUM_ACTIVE_TEMPLATE = (
 )
 
 TEXT_HELP_RU = (
-    "💡 <b>Как пользоваться FaceLab:</b>\n"
-    "1. 📸 Отправьте фото с хорошо видимым лицом\n"
-    "2. 👤 Выберите пол\n"
-    "3. 🎨 Настройте стиль и образ\n"
-    "4. 🔄 Нажмите «Сгенерировать»\n"
-    "5. 🌟 Получите новый уникальный образ!\n\n"
-    "⚠️ <b>Важно:</b>\n"
-    "• Применение готовых образов (стилей, фотосессий, трендов) сбрасывает все текущие изменения\n"
-    "• Отправляйте фото, где лицо хорошо видно\n\n"
-    "💬 Если есть вопросы или предложения, пишите администратору: @FaceLabHelp\n\n"
-    f"<a href='{LINK_USER_AGREEMENT}'>Пользовательское соглашение</a>"
+    '💡 <b>Как пользоваться FaceLab:</b>\n\n1️⃣ 📸 Загрузите фото, где лицо хорошо видно.\nВ идеале — добавьте коллаж из трёх фото: спереди, слева и справа. Это поможет получить более точный и естественный результат.\n\n2️⃣ 🔥 Выберите способ генерации:\n— Взять трендовый промпт\nПерейдите в наш канал, выберите понравившийся образ, скопируйте промпт из комментария под фото и вставьте его в бот.\n— Вставить свой промпт\n\n3️⃣ 🔄 Дождитесь обработки.\n\n4️⃣ 🌟 Получите новый образ.\n\n⸻\n\n⚠️ <b>Важно:</b>\n\n• Чем качественнее исходные фото, тем лучше итоговый результат.\n• Использование трендовых промптов заменяет текущие настройки.\n\n⸻\n\n💬 Есть вопросы или предложения?\nНапишите администратору: @Facelab_Help'
+    f"\n\n<a href='{LINK_USER_AGREEMENT}'>\U0001f4c4 \u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u0441\u043a\u043e\u0435 \u0441\u043e\u0433\u043b\u0430\u0448\u0435\u043d\u0438\u0435</a>"
 )
 
 TEXT_HELP_EN = (
-    "💡 <b>How to use FaceLab:</b>\n"
-    "1. 📸 Send a photo with a clearly visible face\n"
-    "2. 👤 Select gender\n"
-    "3. 🎨 Customize style and look\n"
-    "4. 🔄 Click \"Generate\"\n"
-    "5. 🌟 Get a unique new look!\n\n"
-    "⚠️ <b>Important:</b>\n"
-    "• Applying ready-made looks resets current edits\n"
-    "• Send a photo where the face is clearly visible\n\n"
-    "💬 Contact support: @FaceLabHelp\n\n"
-    f"<a href='{LINK_USER_AGREEMENT}'>Terms of Service</a>"
+    '💡 <b>How to use FaceLab:</b>\n\n1️⃣ 📸 Upload a photo where your face is clearly visible.\nIdeally, add a collage of three photos: front, left side, and right side. This helps achieve a more accurate and natural result.\n\n2️⃣ 🔥 Choose a generation method:\n— Use a trending prompt\nGo to our channel, pick an image you like, copy the prompt from the comment under the photo, and paste it into the bot.\n— Paste your own prompt\n\n3️⃣ 🔄 Wait for processing.\n\n4️⃣ 🌟 Get your new look.\n\n⸻\n\n⚠️ <b>Important:</b>\n\n• The better the quality of the original photos, the better the final result.\n• Using trending prompts will replace your current settings.\n\n⸻\n\n💬 Have questions or suggestions?\nContact the administrator: @Facelab_Help'
+    f"\n\n<a href='{LINK_USER_AGREEMENT}'>\U0001f4c4 User Agreement</a>"
 )
 
 TEXT_PACKAGES_CAPTION = (
-    "<b>Дополнительные генерации</b> 🔥\n\n"
-    "Пакет является дополнением к действующей премиум подписке\n\n"
-    "⚠️ Пакет активен до конца действия премиум-подписки. "
-    "При отмене премиума неиспользованные генерации сгорают, "
-    "при продлении подписки — переносятся на следующий период."
+    '🔥 <b>Дополнительные генерации</b>\n\nЗакончились генерации раньше времени?\nПросто докупите пакет и продолжайте пользоваться ботом без ожидания.\n\nНапример:\nВы приобрели 300 генераций тарифа «Старт» и израсходовали их раньше срока.\nМожно докупить только пакет текущего тарифа.\nДополнительные генерации действуют до конца текущего оплаченного периода.\n\n⚠️ <b>Важно:</b>\n— Пакет доступен только при активной подписке.\n— Если подписка отменена, она продолжает работать до конца оплаченного периода.\n— После завершения периода неиспользованные генерации становятся недоступны.\n\nДоступный пакет пополнения:'
 )
 
 TEXT_PAYMENT_CONFIRMATION_RUB = (
@@ -524,10 +500,15 @@ def kb_help(lang: str = "ru") -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text=lbl, callback_data=CB_LANG_TOGGLE)]
     ])
 
-def kb_packages(lang: str = "ru") -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⭐ Купить 150 генераций — 349₽ / 260⭐", callback_data=CB_PKG_150)],
-        [InlineKeyboardButton(text="✨ Купить 1000 генераций — 1999₽ / 1500⭐", callback_data=CB_PKG_1000)],
-        [InlineKeyboardButton(text="🤩 Купить 5000 генераций — 5999₽ / 4500⭐", callback_data=CB_PKG_5000)],
-    ])
+def kb_packages(price_rub: int, price_stars: int, tier_name: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"⭐ Купить 300 генераций ({tier_name}) — {price_rub}₽ / {price_stars}⭐",
+                    callback_data=CB_PKG_300,
+                )
+            ],
+        ]
+    )
 
